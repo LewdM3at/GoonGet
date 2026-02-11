@@ -28,7 +28,7 @@ def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
     response = requests.get(API_ENDPOINT, params=params, timeout=10)
 
     # debug: show final URL
-    print("Final API URL:", response.url)
+    #print("Final API URL:", response.url)
 
     if response.status_code != 200:
         raise RuntimeError(f"API returned status {response.status_code}")
