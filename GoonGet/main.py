@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 import sys
-from creds_handler import load_api_credentials
-from tag_handler import get_default_tags, add_default_tag, remove_default_tag, build_tags
-from api_calls import fetch_posts
-from display_handler import display_result
+from .creds_handler import load_api_credentials
+from .tag_handler import get_default_tags, add_default_tag, remove_default_tag, build_tags
+from .api_calls import fetch_posts
+from .display_handler import display_result
 
 def main():
     args = sys.argv[1:]
