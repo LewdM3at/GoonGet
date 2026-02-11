@@ -1,12 +1,6 @@
 import os
-import pty
-import sys
-import termios
-import tty
-import subprocess
 import requests
 import tempfile
-#import shutil
 
 SUPPORTED_IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp"}
 SUPPORTED_GIF_FORMATS = {"gif"}
@@ -31,7 +25,6 @@ def display_result(url: str):
 
 def _get_extension(url: str) -> str:
     return url.split(".")[-1].lower().split("?")[0]
-
 
 def _download_to_temp(url: str, ext: str) -> str | None:
     try:
@@ -66,9 +59,6 @@ def _handle_gif(url: str, ext: str):
     os.system(f"chafa {path}")
 
     _cleanup(path)
-
-
-
 
 def _handle_video(url: str, ext: str):
     """Placeholder for future video support."""
