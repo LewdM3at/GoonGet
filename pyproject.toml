@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "goonget"
+version = "0.1.0"
+description = "CLI tool to fetch images/gifs/videos from Gelbooru and display them directly in terminal"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[project.scripts]
+goonget = "goonget.main:main"
