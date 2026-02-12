@@ -14,11 +14,16 @@ def _load_config():
             pass    # Corrupted file -» treat as missing
     return {}
 
-
 def _save_config(data: dict):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
         json.dump(data, f, indent=4)
+
+def _fix_context_tags(tag: str) -> str:
+    if "_." in tag:
+        base, context = tag.split("_.", 1)
+        return f"{base}_({context})"
+    return tag
 
 
 def get_default_tags() -> list[str]:
@@ -53,6 +58,7 @@ def build_tags(cli_args: list[str]) -> list[str]:
     if not cli_args:
         return default_tags
     # otherwise merge the tags from cli
-    final_tags = default_tags + cli_args
+    normalized_cli_tags = [_fix_context_tags(t) for t in cli_args]
+    final_tags = default_tags + normalized_cli_tags
     return final_tags
 
