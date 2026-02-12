@@ -5,7 +5,7 @@ from xml.etree import ElementTree
 API_ENDPOINT = "https://api.rule34.xxx/index.php"
 
 def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
-    # --- safely parse credentials into a dict ---
+    # safely parse credentials into a dict
     cred_parts = {}
     for part in api_credentials.split("&"):
         if "=" not in part:
@@ -13,19 +13,21 @@ def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
         key, value = part.split("=", 1)
         cred_parts[key] = value
 
+    # build credential string manually 
+    cred_string = "&".join(f"{k}={v}" for k, v in cred_parts.items())
+
     # build tag string (space-separated for requests)
     tag_string = " ".join(tags)
 
-    params = {
-        "page": "dapi",
-        "s": "post",
-        "q": "index",
-        "limit": "200",
-        "tags": tag_string,
-        **cred_parts
-    }
+    # build final URL
+    url = ( 
+        f"{API_ENDPOINT}" 
+        f"?page=dapi&s=post&q=index&limit=200" 
+        f"&tags={tag_string}" 
+        f"&{cred_string}" 
+    )
 
-    response = requests.get(API_ENDPOINT, params=params, timeout=10)
+    response = requests.get(url, timeout=10)
 
     # debug: show final URL
     #print("Final API URL:", response.url)
