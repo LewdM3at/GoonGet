@@ -30,7 +30,7 @@ def main():
         return
 
     # show help page
-    if args and args[0] in ("--help", "-h"):
+    if args and args[0] in ("--help", "--h"):
         print_help()
         return
 
