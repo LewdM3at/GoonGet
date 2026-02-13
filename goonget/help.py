@@ -18,7 +18,14 @@ Usage:
   goonget | gg --tags-remove <tag>
       Remove a tag from your default tag list.
 
-  goonget | gg --help, -h
+  goonget | gg --size
+      Show the current size of the image to be rendered in terminal.
+
+  goonget | gg --size=AxB
+  goonget | gg --size AxB
+      Set the size of the render of the result in terminal.
+
+  goonget | gg --help, --h
       Show this help page.
 
 Examples:
@@ -30,6 +37,11 @@ Examples:
   goonget --tags ............................ Shows the list of default tag(s) stored in the config file
   goonget --tags-add -ai_generated .......... Adds the tag "-ai_generated" to the list of default tag(s)
   goonget --tags-remove -ai_generated ....... Removes the tag "-at_generated" from the list of default tag(s)
+  goonget --size ............................ Show the current size of the image to be rendered in terminal.
+  goonget --size=20x40 ...................... Set the size of the render of the result in terminal to 20 x 40.
+  goonget --size 20x40 ...................... Set the size of the render of the result in terminal to 20 x 40.
+  goonget --size Fill ...................... Set the size of the render of the result in terminal to Fill (default).
+
 
 Notes:
   • Default tags are automatically included in every search.

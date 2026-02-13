@@ -1,6 +1,7 @@
 import os
 import requests
 import tempfile
+from .settings_handler import get_current_size
 
 SUPPORTED_IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp"}
 SUPPORTED_GIF_FORMATS = {"gif"}
@@ -47,7 +48,14 @@ def _handle_image(url: str, ext: str):
     if not path:
         return
 
-    os.system(f"chafa {path}")
+    size = get_current_size()
+
+    if not size or size.lower() == "fill":
+        # No size → use chafa defaults
+        os.system(f"chafa {path}")
+    else:
+        # Size provided → pass it to chafa
+        os.system(f"chafa --size={size} {path}")
 
     _cleanup(path)
 
@@ -56,7 +64,14 @@ def _handle_gif(url: str, ext: str):
     if not path:
         return
 
-    os.system(f"chafa {path}")
+    size = get_current_size()
+
+    if not size or size.lower() == "fill":
+        # No size → use chafa defaults
+        os.system(f"chafa {path}")
+    else:
+        # Size provided → pass it to chafa
+        os.system(f"chafa --size={size} {path}")
 
     _cleanup(path)
 

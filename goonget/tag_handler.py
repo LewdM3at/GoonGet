@@ -30,7 +30,6 @@ def get_default_tags() -> list[str]:
     cfg = _load_config()
     return cfg.get("default_tags", [])
 
-
 def add_default_tag(tag: str):
     cfg = _load_config()
     tags = cfg.get("default_tags", [])
@@ -40,7 +39,6 @@ def add_default_tag(tag: str):
 
     cfg["default_tags"] = tags
     _save_config(cfg)
-
 
 def remove_default_tag(tag: str):
     cfg = _load_config()
