@@ -3,6 +3,7 @@
 import sys
 from .creds_handler import load_api_credentials
 from .tag_handler import get_default_tags, add_default_tag, remove_default_tag, build_tags
+from .settings_handler import get_current_size, set_size
 from .api_calls import fetch_posts
 from .display_handler import display_result
 from .help import print_help
@@ -32,6 +33,29 @@ def main():
     if args and args[0] in ("--help", "-h"):
         print_help()
         return
+
+    # result size setting
+    if args and args[0].startswith("--size"):
+        # Case A: --size (no value)
+        if args[0] == "--size" and len(args) == 1:
+            current_size = get_current_size()
+            print(f"Current size: {current_size}")
+            return
+
+        # Case B: --size=AxB
+        if "=" in args[0]:
+            _, value = args[0].split("=", 1)
+            set_size(value)
+            print(f"Updated size to: {value}")
+            return
+
+        # Case C: --size AxB
+        if args[0] == "--size" and len(args) > 1:
+            value = args[1]
+            set_size(value)
+            print(f"Updated size to: {value}")
+            return
+
 
 
     # NORMAL MODE
