@@ -25,7 +25,7 @@ Usage:
   goonget | gg --size AxB
       Set the size of the render of the result in terminal.
 
-  goonget | gg --help, -h
+  goonget | gg --help, --h
       Show this help page.
 
 Examples:
