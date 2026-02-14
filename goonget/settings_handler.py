@@ -27,3 +27,11 @@ def set_size(value: str):
     cfg = _load_config()
     cfg["size"] = value 
     _save_config(cfg)
+
+def get_slideshow_timer():
+    return _load_config().get("slideshow_timer", 3) # 3s as default timer
+
+def set_slideshow_timer(value: int):
+    cfg = _load_config()
+    cfg["slideshow_timer"] = value
+    _save_config(cfg)

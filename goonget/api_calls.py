@@ -22,14 +22,14 @@ def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
     # build final URL
     url = ( 
         f"{API_ENDPOINT}" 
-        f"?page=dapi&s=post&q=index&limit=200" 
+        f"?page=dapi&s=post&q=index&limit=500" 
         f"&tags={tag_string}" 
         f"&{cred_string}" 
     )
 
     response = requests.get(url, timeout=10)
 
-    # debug: show final URL
+    # debug: show final API URL
     #print("Final API URL:", response.url)
 
     if response.status_code != 200:
@@ -38,10 +38,13 @@ def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
     root = ElementTree.fromstring(response.text)
     posts = root.findall("post")
     if not posts:
-        return None
+        return []
 
-    # pick a random post
-    post = random.choice(posts)
+    urls = [] 
+    for post in posts: 
+        file_url = post.attrib.get("file_url") 
+        if not file_url: 
+            continue 
+        urls.append(file_url) 
 
-    # extract the file url
-    return post.attrib.get("file_url")
+    return urls

@@ -1,7 +1,11 @@
 import os
 import requests
 import tempfile
-from .settings_handler import get_current_size
+import random
+import time
+import sys
+import select
+from .settings_handler import get_current_size, get_slideshow_timer
 
 SUPPORTED_IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp"}
 SUPPORTED_GIF_FORMATS = {"gif"}
@@ -22,6 +26,24 @@ def display_result(url: str):
         _handle_video(url, ext)
     else:
         print(f"Unsupported file type: .{ext}")
+
+def display_slideshow(urls: list[str]):
+    timer = get_slideshow_timer()
+    if not urls:
+        print("No non-GIF images found.")
+        return
+
+    while True:
+        random.shuffle(urls)
+        print("Slideshow mode! Stop by pressing Enter!")
+        time.sleep(2)
+        for url in urls:
+            _clear_screen()
+            display_result(url)
+            # Wait for timer OR keypress 
+            if _wait_or_keypress(timer): 
+                print("Slideshow stopped.") 
+                return
 
 
 def _get_extension(url: str) -> str:
@@ -76,7 +98,6 @@ def _handle_gif(url: str, ext: str):
     _cleanup(path)
 
 def _handle_video(url: str, ext: str):
-    """Placeholder for future video support."""
     print("Video support not implemented yet.")
     # Later: use mpv + chafa pipe
     # os.system(f"mpv --vo=tct {path}")
@@ -86,3 +107,15 @@ def _cleanup(path: str):
         os.remove(path)
     except Exception:
         pass
+
+def _clear_screen():
+    print("\033[2J\033[H", flush=True)
+
+def _wait_or_keypress(seconds: float) -> bool:
+    r, _, _ = select.select([sys.stdin], [], [], seconds)
+    if r:
+        sys.stdin.read(1)  # consume key
+        return True
+    return False
+
+

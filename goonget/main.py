@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 import sys
+import random
 from .creds_handler import load_api_credentials
 from .tag_handler import get_default_tags, add_default_tag, remove_default_tag, build_tags
-from .settings_handler import get_current_size, set_size
+from .settings_handler import get_current_size, set_size, get_slideshow_timer, set_slideshow_timer
 from .api_calls import fetch_posts
-from .display_handler import display_result
+from .display_handler import display_result, display_slideshow
 from .help import print_help
 
 def main():
@@ -56,24 +57,49 @@ def main():
             print(f"Updated size to: {value}")
             return
 
+    # no query → show configured timer
+    if args[0] in ("--ss", "--slideshow") and len(args) == 1:
+        print(f"Slideshow timer: {get_slideshow_timer()} seconds")
+        return
+
+    # set the slideshow timer
+    if args[0].startswith("--ss=") or args[0].startswith("--slideshow="):
+        flag, value = args[0].split("=", 1)
+        set_slideshow_timer(int(value))
+        print(f"Slideshow timer set to {value} seconds")
+        return
+
+    # flag to use the slideshow
+    if args[0] in ("--ss", "--slideshow") and len(args) > 1:
+        # API Credentials check
+        api_credentials = load_api_credentials()
+        # build tags
+        final_tags = build_tags(args[1:])
+        # get img/gif/video url
+        urls = fetch_posts(api_credentials, final_tags)
+        # filter out GIFs 
+        urls = [u for u in urls if not u.lower().endswith(".gif")]
+        display_slideshow(urls)
+        return
+
+
 
 
     # NORMAL MODE
     # API Credentials check
     api_credentials = load_api_credentials()
-
     # build tags
     final_tags = build_tags(args)
-
-
     # get img/gif/video url
-    result_url = fetch_posts(api_credentials, final_tags)
+    urls = fetch_posts(api_credentials, final_tags)
 
-    if not result_url:
+    if not urls:
         print("No results found.")
         return
-    else:
-        display_result(result_url)
+    
+    # pick one random result 
+    result_url = random.choice(urls) 
+    display_result(result_url)
 
 
 if __name__ == "__main__":
