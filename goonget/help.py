@@ -25,6 +25,16 @@ Usage:
   goonget | gg --size AxB
       Set the size of the render of the result in terminal.
 
+  goonget | gg --slideshow, --ss
+      Show the current timer for slideshow, how long each image stay displayed in seconds.
+
+  goonget | gg --slideshow=T, --ss=T
+      Sets the timer for slideshow, how long each image stay displayed in seconds.
+
+  goonget | gg --slideshow, --ss <tag1> <tag2> <tag3> ... <tag_n>
+      Fetch the results and display them in slideshow mode.
+      Exit the slideshow mode by pressing Enter.
+
   goonget | gg --help, --h
       Show this help page.
 
@@ -34,7 +44,10 @@ Examples:
   goonget blonde big_boobs .................. Search for posts with the tags "blonde" and "big_boobs"
   goonget "mercy_(overwatch)" -futanari ..... Search for posts with the tag "mercy_(overwatch) excluding posts with the tag "futanari"
   goonget mercy_.overwatch -futanari ........ Search for posts with the tag "mercy_(overwatch) excluding posts with the tag "futanari"
-  goonget --tags ............................ Shows the list of default tag(s) stored in the config file
+  goonget --ss k/da_series .................. Search for posts with the tag "k/da_series" and show the results in a slideshow.
+  goonget --ss .............................. Show the current timer setting for slideshow mode.
+  goonget --ss=5 ............................ Set the slideshow timer to 5 seconds. 
+  goonget --tags ............................ Show the list of default tag(s) stored in the config file
   goonget --tags-add -ai_generated .......... Adds the tag "-ai_generated" to the list of default tag(s)
   goonget --tags-remove -ai_generated ....... Removes the tag "-at_generated" from the list of default tag(s)
   goonget --size ............................ Show the current size of the image to be rendered in terminal.
