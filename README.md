@@ -1,6 +1,6 @@
 # GoonGet
 
-CLI tool for fetching Rule34 content directly in your terminal.
+CLI tool for fetching Rule34, Gelbooru content directly in your terminal.
 
 ## 📌 Overview
 
@@ -8,7 +8,7 @@ GoonGet is a command‑line utility that fetches images and GIFs from Rule34 and
 
 ## ✨ Features
 
-- Fetch images and GIFs from Rule34
+- Fetch images and GIFs from Rule34 and Gelbooru
 
 - Display media directly in your terminal via chafa
 
