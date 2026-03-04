@@ -5,7 +5,7 @@ import random
 import time
 import sys
 import select
-from .settings_handler import get_current_size, get_slideshow_timer
+from .settings_handler import get_current_size, get_slideshow_timer, get_source
 
 SUPPORTED_IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp"}
 SUPPORTED_GIF_FORMATS = {"gif"}
@@ -50,8 +50,18 @@ def _get_extension(url: str) -> str:
     return url.split(".")[-1].lower().split("?")[0]
 
 def _download_to_temp(url: str, ext: str) -> str | None:
+    source = get_source()
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://gelbooru.com/"
+    }
+
     try:
-        response = requests.get(url, timeout=10)
+        if source == "rule34.xxx":
+            response = requests.get(url, timeout=10)
+        if source == "gelbooru.com":
+            response = requests.get(url, headers=headers, timeout=10)
+            
         if response.status_code != 200:
             print("Failed to download file.")
             return None
