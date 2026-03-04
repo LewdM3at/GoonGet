@@ -4,7 +4,7 @@ import sys
 import random
 from .creds_handler import load_api_credentials
 from .tag_handler import get_default_tags, add_default_tag, remove_default_tag, build_tags
-from .settings_handler import get_current_size, set_size, get_slideshow_timer, set_slideshow_timer
+from .settings_handler import get_current_size, set_size, get_slideshow_timer, set_slideshow_timer, get_source, set_source
 from .api_calls import fetch_posts
 from .display_handler import display_result, display_slideshow
 from .help import print_help
@@ -82,8 +82,17 @@ def main():
         display_slideshow(urls)
         return
 
+    # source setting
+    if args and args[0].startswith("--source="):
+        flag, value = args[0].split("=", 1)
+        set_source(value)
+        print(f"Source set to: {value}")
+        return
 
-
+    # get source
+    if args and args[0] == "--source":
+        print(f"Current source: {get_source()}")
+        return
 
     # NORMAL MODE
     # API Credentials check
