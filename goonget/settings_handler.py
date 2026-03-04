@@ -4,7 +4,6 @@ from pathlib import Path
 CONFIG_DIR = Path.home() / ".config" / "goonget"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
-
 def _load_config():
     if CONFIG_FILE.exists():
         try:
@@ -34,4 +33,13 @@ def get_slideshow_timer():
 def set_slideshow_timer(value: int):
     cfg = _load_config()
     cfg["slideshow_timer"] = value
+    _save_config(cfg)
+
+def get_source() -> str:
+    cfg = _load_config()
+    return cfg.get("source", "rule34.xxx")
+
+def set_source(source: str):
+    cfg = _load_config()
+    cfg["source"] = source
     _save_config(cfg)
