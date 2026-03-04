@@ -1,8 +1,7 @@
 import requests
 import random
 from xml.etree import ElementTree
-
-API_ENDPOINT = "https://api.rule34.xxx/index.php"
+from .settings_handler import get_source
 
 def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
     # safely parse credentials into a dict
@@ -20,12 +19,21 @@ def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
     tag_string = " ".join(tags)
 
     # build final URL
-    url = ( 
-        f"{API_ENDPOINT}" 
-        f"?page=dapi&s=post&q=index&limit=500" 
-        f"&tags={tag_string}" 
-        f"&{cred_string}" 
-    )
+    source = get_source()
+    if source == "rule34.xxx":
+        url = ( 
+            f"https://api.{source}/index.php" 
+            f"?page=dapi&s=post&q=index&limit=500" 
+            f"&tags={tag_string}" 
+            f"&{cred_string}" 
+        )
+    elif source == "gelbooru.com":
+        url = ( 
+            f"https://{source}/index.php" 
+            f"?page=dapi&s=post&q=index&limit=500" 
+            f"&tags={tag_string}" 
+            f"&{cred_string}" 
+        )
 
     response = requests.get(url, timeout=10)
 
@@ -41,8 +49,11 @@ def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
         return []
 
     urls = [] 
-    for post in posts: 
-        file_url = post.attrib.get("file_url") 
+    for post in posts:
+        if source == "rule34.xxx":
+            file_url = post.get("file_url")
+        elif source == "gelbooru.com":
+            file_url = post.find("file_url").text if post.find("file_url") is not None else None
         if not file_url: 
             continue 
         urls.append(file_url) 
