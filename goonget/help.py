@@ -35,6 +35,13 @@ Usage:
       Fetch the results and display them in slideshow mode.
       Exit the slideshow mode by pressing Enter.
 
+  goonget | gg --source
+      Show the current source, from which website GoonGet should fetch the images.
+
+  goonget | gg --source=ABC.COM
+      Sets the source, from which website GoonGet should fetch the images.
+      Possible Values: rule34.xxx / gelbooru.com
+
   goonget | gg --help, --h
       Show this help page.
 
@@ -53,7 +60,9 @@ Examples:
   goonget --size ............................ Show the current size of the image to be rendered in terminal.
   goonget --size=20x40 ...................... Set the size of the render of the result in terminal to 20 x 40.
   goonget --size 20x40 ...................... Set the size of the render of the result in terminal to 20 x 40.
-  goonget --size Fill ...................... Set the size of the render of the result in terminal to Fill (default).
+  goonget --size Fill ....................... Set the size of the render of the result in terminal to Fill (default).
+  goonget --source .......................... Show the current source website.
+  goonget --source=gelbooru.com ............. Set the source website to gelbooru.com
 
 
 Notes:
