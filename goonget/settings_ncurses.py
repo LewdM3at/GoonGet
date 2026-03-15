@@ -17,17 +17,31 @@ def load_state():
     else:
         cfg = {}
 
-    source      = cfg.get("source", "rule34.xxx")
+    source       = cfg.get("source", "rule34.xxx")
     default_tags = cfg.get("default_tags", [])
 
-    # tags_checked mirrors whether each tag is "active" — all loaded tags are active
+    # Support both old format (plain strings) and new format ({"tag": ..., "active": ...})
+    tags_checked = []
+    tag_values   = []
+    for t in default_tags:
+        if isinstance(t, dict):
+            tag_values.append(t.get("tag", ""))
+            tags_checked.append(t.get("active", True))
+        else:
+            tag_values.append(str(t))
+            tags_checked.append(True)
+
+    if not tag_values:
+        tag_values   = [""]
+        tags_checked = [False]
+
     return {
         "selected_api": 0 if source == "rule34.xxx" else 1,
         "r34_key":      cfg.get("rule34_api_key", ""),
         "gb_key":       cfg.get("gelbooru_api_key", ""),
         "ss_interval":  str(cfg.get("slideshow_timer", "")),
-        "tags_checked": [True] * len(default_tags) if default_tags else [False],
-        "tag_values":   list(default_tags) if default_tags else [""],
+        "tags_checked": tags_checked,
+        "tag_values":   tag_values,
     }
 
 
@@ -45,14 +59,14 @@ def save_state(state):
     cfg["rule34_api_key"]   = state["r34_key"]
     cfg["gelbooru_api_key"] = state["gb_key"]
 
-    # Only save interval if it's a valid number
     if state["ss_interval"].strip().isdigit():
         cfg["slideshow_timer"] = int(state["ss_interval"].strip())
 
-    # Only save tags that are checked and non-empty
+    # Save all non-empty tags with their active state as objects
     cfg["default_tags"] = [
-        v for checked, v in zip(state["tags_checked"], state["tag_values"])
-        if checked and v.strip()
+        {"tag": v.strip(), "active": checked}
+        for checked, v in zip(state["tags_checked"], state["tag_values"])
+        if v.strip()
     ]
 
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -87,6 +101,14 @@ def field(value):
     """Render [ value ] — default MIN_FIELD spacing when empty, 1 space each side when not."""
     if not value:
         return "[ " + " " * MIN_FIELD + " ]"
+    return "[ " + value + " ]"
+
+def field_truncated(value, max_width):
+    """Like field() but clips to max_width chars, appending ... if clipped."""
+    if not value:
+        return "[ " + " " * min(MIN_FIELD, max_width) + " ]"
+    if len(value) > max_width:
+        value = value[:max_width - 3] + "..."
     return "[ " + value + " ]"
 
 def tags_box_h(tags):
@@ -185,10 +207,13 @@ def draw(stdscr, state, colors):
     draw_box(stdscr, API_BOX_Y, API_BOX_H, "API", c_accent)
     r34_cb = "[x]" if state["selected_api"] == 0 else "[ ]"
     gb_cb  = "[x]" if state["selected_api"] == 1 else "[ ]"
+    # max chars the key field can show before hitting the box border (│)
+    key_field_start = INNER_X + CHECKBOX_W + len(KEY_LABEL)
+    key_max_w = w - 6 - key_field_start - 4  # 4 = "[ " + " ]"
     write(stdscr, RULE34_ROW,   INNER_X, f"{r34_cb} Rule34.xxx", c_normal)
-    write(stdscr, RULE34_ROW,   INNER_X + CHECKBOX_W, KEY_LABEL + field(state["r34_key"]), c_normal)
+    write(stdscr, RULE34_ROW,   INNER_X + CHECKBOX_W, KEY_LABEL + field_truncated(state["r34_key"], key_max_w), c_normal)
     write(stdscr, GELBOORU_ROW, INNER_X, f"{gb_cb} Gelbooru.com", c_normal)
-    write(stdscr, GELBOORU_ROW, INNER_X + CHECKBOX_W, KEY_LABEL + field(state["gb_key"]), c_normal)
+    write(stdscr, GELBOORU_ROW, INNER_X + CHECKBOX_W, KEY_LABEL + field_truncated(state["gb_key"], key_max_w), c_normal)
 
     # Slideshow box
     draw_box(stdscr, SS_BOX_Y, SS_BOX_H, "Slideshow", c_accent)
