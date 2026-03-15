@@ -265,7 +265,7 @@ def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_accent, c_normal):
         elif ch in (10, 13):  # Enter — validate
             if not value or _valid_size(value):
                 break
-            warning = " ✗ Format must be WxH (e.g. 1920x1080) "
+            warning = " ✗ Format must be WxH (e.g. 40x20) "
         elif ch in (curses.KEY_BACKSPACE, 127, 8):
             if buf:
                 buf.pop()
@@ -283,7 +283,7 @@ def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_accent, c_normal):
 # ── Main draw ─────────────────────────────────────────────────────────────────
 
 def draw(stdscr, state, colors):
-    c_accent, c_normal, c_sel, c_btn = colors
+    c_accent, c_normal, c_sel, c_btn, c_check, c_field, c_uncheck = colors
     h, w = stdscr.getmaxyx()
     stdscr.erase()
 
@@ -295,29 +295,35 @@ def draw(stdscr, state, colors):
     draw_box(stdscr, API_BOX_Y, API_BOX_H, "API", c_accent)
     r34_cb = "[x]" if state["selected_api"] == 0 else "[ ]"
     gb_cb  = "[x]" if state["selected_api"] == 1 else "[ ]"
-    # max chars the key field can show before hitting the box border (│)
     key_field_start = INNER_X + CHECKBOX_W + len(KEY_LABEL)
-    key_max_w = w - 6 - key_field_start - 4  # 4 = "[ " + " ]"
-    write(stdscr, RULE34_ROW,   INNER_X, f"{r34_cb} Rule34.xxx", c_normal)
-    write(stdscr, RULE34_ROW,   INNER_X + CHECKBOX_W, KEY_LABEL + field_truncated(state["r34_key"], key_max_w), c_normal)
-    write(stdscr, GELBOORU_ROW, INNER_X, f"{gb_cb} Gelbooru.com", c_normal)
-    write(stdscr, GELBOORU_ROW, INNER_X + CHECKBOX_W, KEY_LABEL + field_truncated(state["gb_key"], key_max_w), c_normal)
+    key_max_w = w - 6 - key_field_start - 4
+    write(stdscr, RULE34_ROW,   INNER_X, r34_cb, c_check if state["selected_api"] == 0 else c_uncheck)
+    write(stdscr, RULE34_ROW,   INNER_X + len(r34_cb) + 1, "Rule34.xxx", c_normal)
+    write(stdscr, RULE34_ROW,   INNER_X + CHECKBOX_W, KEY_LABEL, c_normal)
+    write(stdscr, RULE34_ROW,   INNER_X + CHECKBOX_W + len(KEY_LABEL), field_truncated(state["r34_key"], key_max_w), c_field)
+    write(stdscr, GELBOORU_ROW, INNER_X, gb_cb, c_check if state["selected_api"] == 1 else c_uncheck)
+    write(stdscr, GELBOORU_ROW, INNER_X + len(gb_cb) + 1, "Gelbooru.com", c_normal)
+    write(stdscr, GELBOORU_ROW, INNER_X + CHECKBOX_W, KEY_LABEL, c_normal)
+    write(stdscr, GELBOORU_ROW, INNER_X + CHECKBOX_W + len(KEY_LABEL), field_truncated(state["gb_key"], key_max_w), c_field)
 
     # Slideshow box
     draw_box(stdscr, SS_BOX_Y, SS_BOX_H, "Slideshow", c_accent)
-    write(stdscr, SS_ROW, INNER_X, SS_LABEL + field(state["ss_interval"]), c_normal)
+    write(stdscr, SS_ROW, INNER_X, SS_LABEL, c_normal)
+    write(stdscr, SS_ROW, INNER_X + len(SS_LABEL), field(state["ss_interval"]), c_field)
 
     # Size box
     draw_box(stdscr, SIZE_BOX_Y, SIZE_BOX_H, "Size", c_accent)
     size_display = state["size"] if state["size"] else "Fill"
-    write(stdscr, SIZE_ROW, INNER_X, SIZE_LABEL + field(size_display), c_normal)
+    write(stdscr, SIZE_ROW, INNER_X, SIZE_LABEL, c_normal)
+    write(stdscr, SIZE_ROW, INNER_X + len(SIZE_LABEL), field(size_display), c_field)
 
     # Default Tags box
     tags = state["tags_checked"]
     draw_box(stdscr, TAGS_BOX_Y, tags_box_h(tags), "Default Tags", c_accent)
     for i, (checked, value) in enumerate(zip(tags, state["tag_values"])):
         cb = "[x]" if checked else "[ ]"
-        write(stdscr, tag_row(i), INNER_X, cb + " " + field(value), c_normal)
+        write(stdscr, tag_row(i), INNER_X, cb, c_check if checked else c_uncheck)
+        write(stdscr, tag_row(i), INNER_X + len(cb) + 1, field(value), c_field)
     write(stdscr, btn_row(tags), INNER_X, "[ + Add Tag ]", c_btn)
 
     # Hint bar
@@ -330,7 +336,7 @@ def draw(stdscr, state, colors):
 # ── Click handler ─────────────────────────────────────────────────────────────
 
 def on_click(stdscr, mx, my, state, colors):
-    c_accent, c_normal, c_sel, _ = colors
+    c_accent, c_normal, c_sel, _, c_check, c_field, c_uncheck = colors
     tags = state["tags_checked"]
 
     if my == RULE34_ROW:
@@ -373,16 +379,22 @@ def open_settings(stdscr):
     curses.mousemask(curses.ALL_MOUSE_EVENTS)
 
     colors = (
-        curses.color_pair(1) | curses.A_BOLD,  # c_accent — cyan bold
-        curses.color_pair(2),                  # c_normal — white
-        curses.color_pair(3),                  # c_sel    — black on cyan
-        curses.color_pair(4) | curses.A_BOLD,  # c_btn    — blue bold
+        curses.color_pair(1) | curses.A_BOLD,  # c_accent  — cyan bold
+        curses.color_pair(2),                  # c_normal  — white
+        curses.color_pair(3),                  # c_sel     — black on cyan
+        curses.color_pair(4) | curses.A_BOLD,  # c_btn     — blue bold
+        curses.color_pair(5) | curses.A_BOLD,  # c_check   — yellow bold (checked)
+        curses.color_pair(6),                  # c_field   — green
+        curses.color_pair(7),                  # c_uncheck — yellow dim = orange (unchecked)
     )
 
-    curses.init_pair(1, curses.COLOR_CYAN,  -1)
-    curses.init_pair(2, curses.COLOR_WHITE, -1)
-    curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_CYAN)
-    curses.init_pair(4, curses.COLOR_BLUE,  -1)
+    curses.init_pair(1, curses.COLOR_CYAN,   -1)
+    curses.init_pair(2, curses.COLOR_WHITE,  -1)
+    curses.init_pair(3, curses.COLOR_BLACK,  curses.COLOR_CYAN)
+    curses.init_pair(4, curses.COLOR_BLUE,   -1)
+    curses.init_pair(5, curses.COLOR_YELLOW, -1)  # checkbox checked
+    curses.init_pair(6, curses.COLOR_GREEN,  -1)  # input fields
+    curses.init_pair(7, curses.COLOR_YELLOW, -1)  # checkbox unchecked (dim = orange)
 
     state = load_state()
 
