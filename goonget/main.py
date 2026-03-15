@@ -8,9 +8,8 @@ from .help import print_help
 from .settings_ncurses import open_settings
 from .settings_handler import (
     load_api_credentials,
-    get_default_tags, add_default_tag, remove_default_tag, build_tags,
-    get_source, set_source, get_current_size, set_size,
-    get_slideshow_timer, set_slideshow_timer,
+    get_default_tags, build_tags,
+    get_source, get_current_size, get_slideshow_timer,
 )
 
 
@@ -35,8 +34,7 @@ def main():
 
     # result size setting
     if args and args[0].startswith("--size"):
-        current_size = get_current_size()
-        print(f"Current size: {current_size}")
+        print(f"Current size: {get_current_size()}")
         return
 
     # show configured slideshow timer
@@ -47,6 +45,8 @@ def main():
     # run slideshow with tags
     if args and args[0] in ("--ss", "--slideshow") and len(args) > 1:
         api_credentials = load_api_credentials()
+        if not api_credentials:
+            return
         final_tags = build_tags(args[1:])
         urls = fetch_posts(api_credentials, final_tags)
         urls = [u for u in urls if not u.lower().endswith(".gif")]
@@ -63,7 +63,6 @@ def main():
     if not api_credentials:
         return
     final_tags = build_tags(args)
-    #print(final_tags)
     urls = fetch_posts(api_credentials, final_tags)
     if not urls:
         print("No results found.")
