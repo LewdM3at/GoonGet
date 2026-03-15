@@ -35,13 +35,34 @@ def open_settings(stdscr):
     CHECKBOX_W   = len("[ ] Gelbooru.com   ")  # widest label + gap before API Key:
     KEY_LABEL    = "API Key: "
 
+    # ── Default Tags box layout ───────────────────────────────────────────────
+    TAGS_BOX_Y = BOX_Y + BOX_H + 1
+    NUM_TAGS   = 5
+    TAGS_BOX_H = NUM_TAGS + 4  # top border + 1 top pad + entries + 1 bottom pad + bottom border
+    tags_checked = [False] * NUM_TAGS
+    tag_values   = [""] * NUM_TAGS
+
+    TAG_CB_W  = len("[x] ")   # width of checkbox prefix
+    TAG_FIRST_ROW = TAGS_BOX_Y + 2
+
     def get_dims():
         h, w = stdscr.getmaxyx()
         BOX_W   = w - 6
         INNER_X = BOX_X + 2
-        field_x = INNER_X + CHECKBOX_W + len(KEY_LABEL) + 1   # +1 for opening [
-        FIELD_W = (BOX_X + BOX_W - 1) - field_x - 2           # right margin of 2
+        field_x = INNER_X + CHECKBOX_W + len(KEY_LABEL) + 1
+        FIELD_W = (BOX_X + BOX_W - 1) - field_x - 2
         return h, w, BOX_W, INNER_X, field_x, FIELD_W
+
+    def draw_box(by, bh, bw, label):
+        section = f" {label} "
+        top = "┌─" + section + "─" * (bw - len(section) - 3) + "┐"
+        stdscr.attron(C_ACCENT)
+        stdscr.addstr(by, BOX_X, top)
+        for row in range(1, bh - 1):
+            stdscr.addstr(by + row, BOX_X, "│")
+            stdscr.addstr(by + row, BOX_X + bw - 1, "│")
+        stdscr.addstr(by + bh - 1, BOX_X, "└" + "─" * (bw - 2) + "┘")
+        stdscr.attroff(C_ACCENT)
 
     def draw():
         h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
@@ -58,18 +79,10 @@ def open_settings(stdscr):
         stdscr.addstr(0, (w - len(title)) // 2, title)
         stdscr.attroff(C_ACCENT)
 
-        # ── API box — all borders in cyan ─────────────────────────────────────
-        section = " API "
-        top = "┌─" + section + "─" * (BOX_W - len(section) - 3) + "┐"
-        stdscr.attron(C_ACCENT)
-        stdscr.addstr(BOX_Y, BOX_X, top)
-        for row in range(1, BOX_H - 1):
-            stdscr.addstr(BOX_Y + row, BOX_X, "│")
-            stdscr.addstr(BOX_Y + row, BOX_X + BOX_W - 1, "│")
-        stdscr.addstr(BOX_Y + BOX_H - 1, BOX_X, "└" + "─" * (BOX_W - 2) + "┘")
-        stdscr.attroff(C_ACCENT)
+        # ── API box ───────────────────────────────────────────────────────────
+        draw_box(BOX_Y, BOX_H, BOX_W, "API")
 
-        # ── Rule34 row ────────────────────────────────────────────────────────
+        # Rule34 row
         r34_cb = "[x]" if selected_api == 0 else "[ ]"
         stdscr.attron(C_NORMAL)
         stdscr.addstr(RULE34_ROW, INNER_X, f"{r34_cb} Rule34.xxx")
@@ -78,7 +91,7 @@ def open_settings(stdscr):
         stdscr.addstr(RULE34_ROW, field_x - 1, "[" + display.ljust(FIELD_W) + "]")
         stdscr.attroff(C_NORMAL)
 
-        # ── Gelbooru row ──────────────────────────────────────────────────────
+        # Gelbooru row
         gb_cb = "[x]" if selected_api == 1 else "[ ]"
         stdscr.attron(C_NORMAL)
         stdscr.addstr(GELBOORU_ROW, INNER_X, f"{gb_cb} Gelbooru.com")
@@ -86,6 +99,21 @@ def open_settings(stdscr):
         display = gb_api_key[-FIELD_W:] if len(gb_api_key) > FIELD_W else gb_api_key
         stdscr.addstr(GELBOORU_ROW, field_x - 1, "[" + display.ljust(FIELD_W) + "]")
         stdscr.attroff(C_NORMAL)
+
+        # ── Default Tags box ──────────────────────────────────────────────────
+        draw_box(TAGS_BOX_Y, TAGS_BOX_H, BOX_W, "Default Tags")
+
+        tag_field_x = INNER_X + TAG_CB_W
+        tag_field_w = BOX_W - TAG_CB_W - 5  # right margin
+
+        for i in range(NUM_TAGS):
+            row_y = TAG_FIRST_ROW + i
+            cb = "[x]" if tags_checked[i] else "[ ]"
+            display = tag_values[i][-tag_field_w:] if len(tag_values[i]) > tag_field_w else tag_values[i]
+            field_str = "[" + display.ljust(tag_field_w) + "]"
+            stdscr.attron(C_NORMAL)
+            stdscr.addstr(row_y, INNER_X, cb + " " + field_str)
+            stdscr.attroff(C_NORMAL)
 
         # Hint
         hint = " Click checkbox to select   Click key field to edit   q Quit "
@@ -152,6 +180,55 @@ def open_settings(stdscr):
         curses.curs_set(0)
         return "".join(buf)
 
+    def edit_tag(i, row_y):
+        """Inline editor for a tag field."""
+        h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
+        tag_field_x = INNER_X + TAG_CB_W + 1  # +1 for opening [
+        tag_field_w = BOX_W - TAG_CB_W - 5
+        buf = list(tag_values[i])
+        curses.curs_set(1)
+
+        while True:
+            display   = "".join(buf)
+            visible   = display[-tag_field_w:] if len(display) > tag_field_w else display
+            field_str = visible.ljust(tag_field_w)
+
+            stdscr.attron(C_SEL)
+            stdscr.addstr(row_y, tag_field_x, field_str)
+            stdscr.attroff(C_SEL)
+            stdscr.move(row_y, tag_field_x + min(len(visible), tag_field_w - 1))
+            stdscr.refresh()
+
+            ch = stdscr.getch()
+
+            if ch == 27:
+                stdscr.nodelay(True)
+                seq = [ch]
+                while True:
+                    nc = stdscr.getch()
+                    if nc == -1:
+                        break
+                    seq.append(nc)
+                stdscr.nodelay(False)
+                seq_str = "".join(chr(c) if 0 <= c < 256 else "" for c in seq)
+                if "\x1b[200~" in seq_str:
+                    inner = seq_str.replace("\x1b[200~", "").replace("\x1b[201~", "")
+                    buf.extend(c for c in inner if 32 <= ord(c) <= 126)
+                    break
+                else:
+                    buf = list(tag_values[i])
+                    break
+            elif ch in (10, 13):
+                break
+            elif ch in (curses.KEY_BACKSPACE, 127, 8):
+                if buf:
+                    buf.pop()
+            elif 32 <= ch <= 126:
+                buf.append(chr(ch))
+
+        curses.curs_set(0)
+        tag_values[i] = "".join(buf)
+
     # Main loop
     while True:
         draw()
@@ -182,6 +259,21 @@ def open_settings(stdscr):
                         elif mx >= field_x - 1:
                             gb_api_key = edit_key(GELBOORU_ROW, gb_api_key)
 
+                    elif TAG_FIRST_ROW <= my < TAG_FIRST_ROW + NUM_TAGS:
+                        i = my - TAG_FIRST_ROW
+                        tag_field_x = INNER_X + TAG_CB_W + 1
+                        if mx < INNER_X + TAG_CB_W:
+                            tags_checked[i] = not tags_checked[i]
+                        elif mx >= tag_field_x:
+                            edit_tag(i, my)
+
             except curses.error:
                 pass
 
+
+def main():
+    curses.wrapper(open_settings)
+
+
+if __name__ == "__main__":
+    main()
