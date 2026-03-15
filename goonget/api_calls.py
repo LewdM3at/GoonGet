@@ -30,7 +30,7 @@ def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
     elif source == "gelbooru.com":
         url = ( 
             f"https://{source}/index.php" 
-            f"?page=dapi&s=post&q=index&limit=500" 
+            f"?page=dapi&s=post&q=index&limit=1000" 
             f"&tags={tag_string}" 
             f"&{cred_string}" 
         )
