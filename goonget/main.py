@@ -2,17 +2,23 @@
 
 import sys
 import random
+import curses
 from .creds_handler import load_api_credentials
 from .tag_handler import get_default_tags, add_default_tag, remove_default_tag, build_tags
 from .settings_handler import get_current_size, set_size, get_slideshow_timer, set_slideshow_timer, get_source, set_source
 from .api_calls import fetch_posts
 from .display_handler import display_result, display_slideshow
 from .help import print_help
+from .settings_ncurses import open_settings
 
 def main():
     args = sys.argv[1:]
 
     # HANDLE SPECIAL TAG COMMANDS
+    # open settings page
+    if args and args[0] == "--settings":
+        curses.wrapper(open_settings)
+        return
     # show default tags
     if args and args[0] == "--tags":
         tags = get_default_tags()
