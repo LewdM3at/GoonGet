@@ -10,6 +10,7 @@ def open_settings(stdscr):
     curses.init_pair(1, curses.COLOR_CYAN, -1)
     curses.init_pair(2, curses.COLOR_WHITE, -1)
     curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_CYAN)
+    curses.init_pair(4, curses.COLOR_BLUE, -1)
 
     C_ACCENT = curses.color_pair(1) | curses.A_BOLD
     C_NORMAL = curses.color_pair(2)
@@ -36,14 +37,22 @@ def open_settings(stdscr):
     KEY_LABEL    = "API Key: "
 
     # ── Default Tags box layout ───────────────────────────────────────────────
-    TAGS_BOX_Y = BOX_Y + BOX_H + 1
-    NUM_TAGS   = 5
-    TAGS_BOX_H = NUM_TAGS + 4  # top border + 1 top pad + entries + 1 bottom pad + bottom border
-    tags_checked = [False] * NUM_TAGS
-    tag_values   = [""] * NUM_TAGS
+    TAGS_BOX_Y   = BOX_Y + BOX_H + 1
+    tags_checked = [False]
+    tag_values   = [""]
 
-    TAG_CB_W  = len("[x] ")   # width of checkbox prefix
-    TAG_FIRST_ROW = TAGS_BOX_Y + 2
+    TAG_CB_W = len("[x] ")
+    C_BTN    = curses.color_pair(4) | curses.A_BOLD
+
+    def tags_box_h():
+        # top border + 1 pad + N entries + 1 button row + 1 pad + bottom border
+        return len(tags_checked) + 5
+
+    def tag_first_row():
+        return TAGS_BOX_Y + 2
+
+    def btn_row():
+        return tag_first_row() + len(tags_checked) + 1
 
     def get_dims():
         h, w = stdscr.getmaxyx()
@@ -101,19 +110,25 @@ def open_settings(stdscr):
         stdscr.attroff(C_NORMAL)
 
         # ── Default Tags box ──────────────────────────────────────────────────
-        draw_box(TAGS_BOX_Y, TAGS_BOX_H, BOX_W, "Default Tags")
+        draw_box(TAGS_BOX_Y, tags_box_h(), BOX_W, "Default Tags")
 
         tag_field_x = INNER_X + TAG_CB_W
-        tag_field_w = BOX_W - TAG_CB_W - 5  # right margin
+        tag_field_w = BOX_W - TAG_CB_W - 6  # match API box right margin
 
-        for i in range(NUM_TAGS):
-            row_y = TAG_FIRST_ROW + i
+        for i in range(len(tags_checked)):
+            row_y = tag_first_row() + i
             cb = "[x]" if tags_checked[i] else "[ ]"
             display = tag_values[i][-tag_field_w:] if len(tag_values[i]) > tag_field_w else tag_values[i]
             field_str = "[" + display.ljust(tag_field_w) + "]"
             stdscr.attron(C_NORMAL)
             stdscr.addstr(row_y, INNER_X, cb + " " + field_str)
             stdscr.attroff(C_NORMAL)
+
+        # ── Add Tag button ────────────────────────────────────────────────────
+        btn_label = "[ + Add Tag ]"
+        stdscr.attron(C_BTN)
+        stdscr.addstr(btn_row(), INNER_X, btn_label)
+        stdscr.attroff(C_BTN)
 
         # Hint
         hint = " Click checkbox to select   Click key field to edit   q Quit "
@@ -184,7 +199,7 @@ def open_settings(stdscr):
         """Inline editor for a tag field."""
         h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
         tag_field_x = INNER_X + TAG_CB_W + 1  # +1 for opening [
-        tag_field_w = BOX_W - TAG_CB_W - 5
+        tag_field_w = BOX_W - TAG_CB_W - 7
         buf = list(tag_values[i])
         curses.curs_set(1)
 
@@ -259,21 +274,18 @@ def open_settings(stdscr):
                         elif mx >= field_x - 1:
                             gb_api_key = edit_key(GELBOORU_ROW, gb_api_key)
 
-                    elif TAG_FIRST_ROW <= my < TAG_FIRST_ROW + NUM_TAGS:
-                        i = my - TAG_FIRST_ROW
+                    elif tag_first_row() <= my < tag_first_row() + len(tags_checked):
+                        i = my - tag_first_row()
                         tag_field_x = INNER_X + TAG_CB_W + 1
                         if mx < INNER_X + TAG_CB_W:
                             tags_checked[i] = not tags_checked[i]
                         elif mx >= tag_field_x:
                             edit_tag(i, my)
 
+                    elif my == btn_row() and mx >= INNER_X and mx < INNER_X + len("[ + Add Tag ]"):
+                        tags_checked.append(False)
+                        tag_values.append("")
+
             except curses.error:
                 pass
 
-
-def main():
-    curses.wrapper(open_settings)
-
-
-if __name__ == "__main__":
-    main()
