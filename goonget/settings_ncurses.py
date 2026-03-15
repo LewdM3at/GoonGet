@@ -1,5 +1,248 @@
 import curses
+import sys
+import json
+from pathlib import Path
 
+CONFIG_FILE = Path.home() / ".config" / "goonget" / "config.json"
+
+# ── Config load / save ────────────────────────────────────────────────────────
+
+def load_state():
+    """Read config.json and map it to the UI state dict."""
+    if CONFIG_FILE.exists():
+        try:
+            cfg = json.loads(CONFIG_FILE.read_text())
+        except json.JSONDecodeError:
+            cfg = {}
+    else:
+        cfg = {}
+
+    source      = cfg.get("source", "rule34.xxx")
+    default_tags = cfg.get("default_tags", [])
+
+    # tags_checked mirrors whether each tag is "active" — all loaded tags are active
+    return {
+        "selected_api": 0 if source == "rule34.xxx" else 1,
+        "r34_key":      cfg.get("rule34_api_key", ""),
+        "gb_key":       cfg.get("gelbooru_api_key", ""),
+        "ss_interval":  str(cfg.get("slideshow_timer", "")),
+        "tags_checked": [True] * len(default_tags) if default_tags else [False],
+        "tag_values":   list(default_tags) if default_tags else [""],
+    }
+
+
+def save_state(state):
+    """Write the UI state back to config.json, preserving any unrelated keys."""
+    if CONFIG_FILE.exists():
+        try:
+            cfg = json.loads(CONFIG_FILE.read_text())
+        except json.JSONDecodeError:
+            cfg = {}
+    else:
+        cfg = {}
+
+    cfg["source"]           = "rule34.xxx" if state["selected_api"] == 0 else "gelbooru.com"
+    cfg["rule34_api_key"]   = state["r34_key"]
+    cfg["gelbooru_api_key"] = state["gb_key"]
+
+    # Only save interval if it's a valid number
+    if state["ss_interval"].strip().isdigit():
+        cfg["slideshow_timer"] = int(state["ss_interval"].strip())
+
+    # Only save tags that are checked and non-empty
+    cfg["default_tags"] = [
+        v for checked, v in zip(state["tags_checked"], state["tag_values"])
+        if checked and v.strip()
+    ]
+
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=4))
+
+
+
+BOX_X   = 3
+INNER_X = BOX_X + 2
+
+API_BOX_Y    = 2
+API_BOX_H    = 7
+CHECKBOX_W   = len("[ ] Gelbooru.com   ")
+KEY_LABEL    = "API Key: "
+RULE34_ROW   = API_BOX_Y + 2
+GELBOORU_ROW = API_BOX_Y + 4
+
+SS_BOX_Y = API_BOX_Y + API_BOX_H + 1
+SS_BOX_H = 5
+SS_ROW   = SS_BOX_Y + 2
+SS_LABEL = "Interval (s): "
+
+TAGS_BOX_Y = SS_BOX_Y + SS_BOX_H + 1
+TAG_CB_W   = len("[x] ")
+
+MIN_FIELD = 10  # minimum field width when empty
+
+
+# ── Pure helpers (no curses, no state) ───────────────────────────────────────
+
+def field(value):
+    """Render [ value ] — default MIN_FIELD spacing when empty, 1 space each side when not."""
+    if not value:
+        return "[ " + " " * MIN_FIELD + " ]"
+    return "[ " + value + " ]"
+
+def tags_box_h(tags):
+    # top border + pad + N rows + button row + pad + bottom border
+    return len(tags) + 5
+
+def tag_row(i):
+    return TAGS_BOX_Y + 2 + i
+
+def btn_row(tags):
+    return TAGS_BOX_Y + 2 + len(tags) + 1
+
+
+# ── Drawing helpers ───────────────────────────────────────────────────────────
+
+def draw_box(stdscr, y, h, label, c_accent):
+    _, w = stdscr.getmaxyx()
+    bw      = w - 6
+    section = f" {label} "
+    top     = "┌─" + section + "─" * (bw - len(section) - 3) + "┐"
+    stdscr.attron(c_accent)
+    stdscr.addstr(y, BOX_X, top)
+    for row in range(1, h - 1):
+        stdscr.addstr(y + row, BOX_X,         "│")
+        stdscr.addstr(y + row, BOX_X + bw - 1, "│")
+    stdscr.addstr(y + h - 1, BOX_X, "└" + "─" * (bw - 2) + "┘")
+    stdscr.attroff(c_accent)
+
+def write(stdscr, row, col, text, attr):
+    stdscr.attron(attr)
+    stdscr.addstr(row, col, text)
+    stdscr.attroff(attr)
+
+
+# ── Inline field editor ───────────────────────────────────────────────────────
+
+def inline_edit(stdscr, row, field_x, initial, c_sel):
+    """Edit a field in-place. Returns the new string value."""
+    buf = list(initial)
+    curses.curs_set(1)
+
+    while True:
+        value    = "".join(buf)
+        rendered = field(value)
+        cursor_x = field_x + 2 + len(value)  # skip "[ "
+
+        stdscr.attron(c_sel)
+        stdscr.addstr(row, field_x, rendered)
+        stdscr.attroff(c_sel)
+        stdscr.move(row, cursor_x)
+        stdscr.refresh()
+
+        ch = stdscr.getch()
+
+        if ch == 27:  # ESC or bracketed paste
+            stdscr.nodelay(True)
+            seq = []
+            while True:
+                nc = stdscr.getch()
+                if nc == -1:
+                    break
+                seq.append(chr(nc) if 0 <= nc < 256 else "")
+            stdscr.nodelay(False)
+            seq_str = "".join(seq)
+            if "[200~" in seq_str:  # bracketed paste — auto confirm
+                pasted = seq_str.split("[200~", 1)[-1].split("[201~")[0]
+                buf.extend(c for c in pasted if 32 <= ord(c) <= 126)
+                break
+            else:  # plain ESC — cancel
+                buf = list(initial)
+                break
+        elif ch in (10, 13):
+            break
+        elif ch in (curses.KEY_BACKSPACE, 127, 8):
+            if buf:
+                buf.pop()
+        elif 32 <= ch <= 126:
+            buf.append(chr(ch))
+
+    curses.curs_set(0)
+    return "".join(buf)
+
+
+# ── Main draw ─────────────────────────────────────────────────────────────────
+
+def draw(stdscr, state, colors):
+    c_accent, c_normal, c_sel, c_btn = colors
+    h, w = stdscr.getmaxyx()
+    stdscr.erase()
+
+    # Outer border + title
+    stdscr.attron(c_normal); stdscr.border(); stdscr.attroff(c_normal)
+    write(stdscr, 0, (w - 20) // 2, " GoonGet — Settings ", c_accent)
+
+    # API box
+    draw_box(stdscr, API_BOX_Y, API_BOX_H, "API", c_accent)
+    r34_cb = "[x]" if state["selected_api"] == 0 else "[ ]"
+    gb_cb  = "[x]" if state["selected_api"] == 1 else "[ ]"
+    write(stdscr, RULE34_ROW,   INNER_X, f"{r34_cb} Rule34.xxx", c_normal)
+    write(stdscr, RULE34_ROW,   INNER_X + CHECKBOX_W, KEY_LABEL + field(state["r34_key"]), c_normal)
+    write(stdscr, GELBOORU_ROW, INNER_X, f"{gb_cb} Gelbooru.com", c_normal)
+    write(stdscr, GELBOORU_ROW, INNER_X + CHECKBOX_W, KEY_LABEL + field(state["gb_key"]), c_normal)
+
+    # Slideshow box
+    draw_box(stdscr, SS_BOX_Y, SS_BOX_H, "Slideshow", c_accent)
+    write(stdscr, SS_ROW, INNER_X, SS_LABEL + field(state["ss_interval"]), c_normal)
+
+    # Default Tags box
+    tags = state["tags_checked"]
+    draw_box(stdscr, TAGS_BOX_Y, tags_box_h(tags), "Default Tags", c_accent)
+    for i, (checked, value) in enumerate(zip(tags, state["tag_values"])):
+        cb = "[x]" if checked else "[ ]"
+        write(stdscr, tag_row(i), INNER_X, cb + " " + field(value), c_normal)
+    write(stdscr, btn_row(tags), INNER_X, "[ + Add Tag ]", c_btn)
+
+    # Hint bar
+    hint = " Click checkbox to select   Click field to edit   q Quit "
+    write(stdscr, h - 1, max(0, (w - len(hint)) // 2), hint[:w - 1], c_accent)
+
+    stdscr.refresh()
+
+
+# ── Click handler ─────────────────────────────────────────────────────────────
+
+def on_click(stdscr, mx, my, state, colors):
+    _, c_normal, c_sel, _ = colors
+    tags = state["tags_checked"]
+
+    if my == RULE34_ROW:
+        if mx < INNER_X + CHECKBOX_W:
+            state["selected_api"] = 0
+        elif mx >= INNER_X + CHECKBOX_W + len(KEY_LABEL):
+            state["r34_key"] = inline_edit(stdscr, my, INNER_X + CHECKBOX_W + len(KEY_LABEL), state["r34_key"], c_sel)
+
+    elif my == GELBOORU_ROW:
+        if mx < INNER_X + CHECKBOX_W:
+            state["selected_api"] = 1
+        elif mx >= INNER_X + CHECKBOX_W + len(KEY_LABEL):
+            state["gb_key"] = inline_edit(stdscr, my, INNER_X + CHECKBOX_W + len(KEY_LABEL), state["gb_key"], c_sel)
+
+    elif my == SS_ROW and mx >= INNER_X + len(SS_LABEL):
+        state["ss_interval"] = inline_edit(stdscr, my, INNER_X + len(SS_LABEL), state["ss_interval"], c_sel)
+
+    elif tag_row(0) <= my < tag_row(len(tags)):
+        i = my - tag_row(0)
+        if mx < INNER_X + TAG_CB_W:
+            tags[i] = not tags[i]
+        elif mx >= INNER_X + TAG_CB_W + 1:
+            state["tag_values"][i] = inline_edit(stdscr, my, INNER_X + TAG_CB_W + 1, state["tag_values"][i], c_sel)
+
+    elif my == btn_row(tags) and INNER_X <= mx < INNER_X + len("[ + Add Tag ]"):
+        state["tags_checked"].append(False)
+        state["tag_values"].append("")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 def open_settings(stdscr):
     curses.start_color()
@@ -7,303 +250,29 @@ def open_settings(stdscr):
     curses.curs_set(0)
     curses.mousemask(curses.ALL_MOUSE_EVENTS)
 
-    curses.init_pair(1, curses.COLOR_CYAN, -1)
+    colors = (
+        curses.color_pair(1) | curses.A_BOLD,  # c_accent — cyan bold
+        curses.color_pair(2),                  # c_normal — white
+        curses.color_pair(3),                  # c_sel    — black on cyan
+        curses.color_pair(4) | curses.A_BOLD,  # c_btn    — blue bold
+    )
+
+    curses.init_pair(1, curses.COLOR_CYAN,  -1)
     curses.init_pair(2, curses.COLOR_WHITE, -1)
     curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_CYAN)
-    curses.init_pair(4, curses.COLOR_BLUE, -1)
+    curses.init_pair(4, curses.COLOR_BLUE,  -1)
 
-    C_ACCENT = curses.color_pair(1) | curses.A_BOLD
-    C_NORMAL = curses.color_pair(2)
-    C_SEL    = curses.color_pair(3)
+    state = load_state()
 
-    # Enable bracketed paste in the terminal
-    import sys
     sys.stdout.write("\033[?2004h")
     sys.stdout.flush()
 
-    # State
-    selected_api  = 0  # 0 = Rule34, 1 = Gelbooru
-    r34_api_key   = ""
-    gb_api_key    = ""
-
-    BOX_Y        = 2
-    BOX_X        = 3
-    BOX_H        = 7
-    RULE34_ROW   = BOX_Y + 2
-    GELBOORU_ROW = BOX_Y + 4
-
-    # Fixed label column so both "API Key:" fields line up
-    CHECKBOX_W   = len("[ ] Gelbooru.com   ")  # widest label + gap before API Key:
-    KEY_LABEL    = "API Key: "
-
-    # ── Slideshow box layout ──────────────────────────────────────────────────
-    SS_BOX_Y   = BOX_Y + BOX_H + 1
-    SS_BOX_H   = 4  # top border + 1 pad + 1 entry + 1 pad + bottom border — wait, that's 5
-    SS_BOX_H   = 5
-    SS_ROW     = SS_BOX_Y + 2
-    SS_LABEL   = "Interval (s): "
-    slideshow_interval = ""
-
-    # ── Default Tags box layout ───────────────────────────────────────────────
-    TAGS_BOX_Y   = SS_BOX_Y + SS_BOX_H + 1
-    tags_checked = [False]
-    tag_values   = [""]
-
-    TAG_CB_W = len("[x] ")
-    C_BTN    = curses.color_pair(4) | curses.A_BOLD
-
-    def tags_box_h():
-        # top border + 1 pad + N entries + 1 button row + 1 pad + bottom border
-        return len(tags_checked) + 5
-
-    def tag_first_row():
-        return TAGS_BOX_Y + 2
-
-    def btn_row():
-        return tag_first_row() + len(tags_checked) + 1
-
-    def get_dims():
-        h, w = stdscr.getmaxyx()
-        BOX_W   = w - 6
-        INNER_X = BOX_X + 2
-        field_x = INNER_X + CHECKBOX_W + len(KEY_LABEL) + 1
-        FIELD_W = (BOX_X + BOX_W - 1) - field_x - 2
-        return h, w, BOX_W, INNER_X, field_x, FIELD_W
-
-    def draw_box(by, bh, bw, label):
-        section = f" {label} "
-        top = "┌─" + section + "─" * (bw - len(section) - 3) + "┐"
-        stdscr.attron(C_ACCENT)
-        stdscr.addstr(by, BOX_X, top)
-        for row in range(1, bh - 1):
-            stdscr.addstr(by + row, BOX_X, "│")
-            stdscr.addstr(by + row, BOX_X + bw - 1, "│")
-        stdscr.addstr(by + bh - 1, BOX_X, "└" + "─" * (bw - 2) + "┘")
-        stdscr.attroff(C_ACCENT)
-
-    def draw():
-        h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
-        stdscr.erase()
-
-        # Outer border
-        stdscr.attron(C_NORMAL)
-        stdscr.border()
-        stdscr.attroff(C_NORMAL)
-
-        # Main title
-        title = " GoonGet — Settings "
-        stdscr.attron(C_ACCENT)
-        stdscr.addstr(0, (w - len(title)) // 2, title)
-        stdscr.attroff(C_ACCENT)
-
-        # ── API box ───────────────────────────────────────────────────────────
-        draw_box(BOX_Y, BOX_H, BOX_W, "API")
-
-        # Rule34 row
-        r34_cb = "[x]" if selected_api == 0 else "[ ]"
-        stdscr.attron(C_NORMAL)
-        stdscr.addstr(RULE34_ROW, INNER_X, f"{r34_cb} Rule34.xxx")
-        stdscr.addstr(RULE34_ROW, INNER_X + CHECKBOX_W, KEY_LABEL)
-        display = r34_api_key[-FIELD_W:] if len(r34_api_key) > FIELD_W else r34_api_key
-        stdscr.addstr(RULE34_ROW, field_x - 1, "[" + display.ljust(FIELD_W) + "]")
-        stdscr.attroff(C_NORMAL)
-
-        # Gelbooru row
-        gb_cb = "[x]" if selected_api == 1 else "[ ]"
-        stdscr.attron(C_NORMAL)
-        stdscr.addstr(GELBOORU_ROW, INNER_X, f"{gb_cb} Gelbooru.com")
-        stdscr.addstr(GELBOORU_ROW, INNER_X + CHECKBOX_W, KEY_LABEL)
-        display = gb_api_key[-FIELD_W:] if len(gb_api_key) > FIELD_W else gb_api_key
-        stdscr.addstr(GELBOORU_ROW, field_x - 1, "[" + display.ljust(FIELD_W) + "]")
-        stdscr.attroff(C_NORMAL)
-
-        # ── Slideshow box ─────────────────────────────────────────────────────
-        draw_box(SS_BOX_Y, SS_BOX_H, BOX_W, "Slideshow")
-
-        ss_field_x = INNER_X + len(SS_LABEL) + 1  # +1 for opening [
-        ss_field_w = (BOX_X + BOX_W - 1) - ss_field_x - 2
-        display = slideshow_interval[-ss_field_w:] if len(slideshow_interval) > ss_field_w else slideshow_interval
-        stdscr.attron(C_NORMAL)
-        stdscr.addstr(SS_ROW, INNER_X, SS_LABEL)
-        stdscr.addstr(SS_ROW, INNER_X + len(SS_LABEL), "[" + display.ljust(ss_field_w) + "]")
-        stdscr.attroff(C_NORMAL)
-
-        # ── Default Tags box ──────────────────────────────────────────────────
-        draw_box(TAGS_BOX_Y, tags_box_h(), BOX_W, "Default Tags")
-
-        tag_field_x = INNER_X + TAG_CB_W
-        tag_field_w = BOX_W - TAG_CB_W - 6  # match API box right margin
-
-        for i in range(len(tags_checked)):
-            row_y = tag_first_row() + i
-            cb = "[x]" if tags_checked[i] else "[ ]"
-            display = tag_values[i][-tag_field_w:] if len(tag_values[i]) > tag_field_w else tag_values[i]
-            field_str = "[" + display.ljust(tag_field_w) + "]"
-            stdscr.attron(C_NORMAL)
-            stdscr.addstr(row_y, INNER_X, cb + " " + field_str)
-            stdscr.attroff(C_NORMAL)
-
-        # ── Add Tag button ────────────────────────────────────────────────────
-        btn_label = "[ + Add Tag ]"
-        stdscr.attron(C_BTN)
-        stdscr.addstr(btn_row(), INNER_X, btn_label)
-        stdscr.attroff(C_BTN)
-
-        # Hint
-        hint = " Click checkbox to select   Click key field to edit   q Quit "
-        stdscr.attron(C_ACCENT)
-        stdscr.addstr(h - 1, max(0, (w - len(hint)) // 2), hint[:w - 1])
-        stdscr.attroff(C_ACCENT)
-
-        stdscr.refresh()
-
-    def edit_key(row_y, current_key):
-        """Inline editor. Returns new key value. Auto-confirms on bracketed paste."""
-        h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
-        buf = list(current_key)
-        curses.curs_set(1)
-        in_paste = False
-
-        def refresh_field():
-            display   = "".join(buf)
-            visible   = display[-FIELD_W:] if len(display) > FIELD_W else display
-            field_str = visible.ljust(FIELD_W)
-            stdscr.attron(C_SEL)
-            stdscr.addstr(row_y, field_x, field_str)
-            stdscr.attroff(C_SEL)
-            cursor_x = field_x + min(len(visible), FIELD_W - 1)
-            stdscr.move(row_y, cursor_x)
-            stdscr.refresh()
-
-        while True:
-            refresh_field()
-            ch = stdscr.getch()
-
-            # Bracketed paste start: ESC [ 2 0 0 ~  (arrives as separate chars)
-            if ch == 27:
-                stdscr.nodelay(True)
-                seq = [ch]
-                while True:
-                    nc = stdscr.getch()
-                    if nc == -1:
-                        break
-                    seq.append(nc)
-                stdscr.nodelay(False)
-
-                seq_str = "".join(chr(c) if 0 <= c < 256 else "" for c in seq)
-
-                if "\x1b[200~" in seq_str:
-                    # Extract pasted content between markers
-                    inner = seq_str.replace("\x1b[200~", "").replace("\x1b[201~", "")
-                    buf.extend(c for c in inner if 32 <= ord(c) <= 126)
-                    # Auto-confirm after paste
-                    break
-                else:
-                    # Plain Escape — cancel
-                    buf = list(current_key)
-                    break
-
-            elif ch in (10, 13):
-                break
-            elif ch in (curses.KEY_BACKSPACE, 127, 8):
-                if buf:
-                    buf.pop()
-            elif 32 <= ch <= 126:
-                buf.append(chr(ch))
-
-        curses.curs_set(0)
-        return "".join(buf)
-
-    def edit_tag(i, row_y):
-        """Inline editor for a tag field."""
-        h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
-        tag_field_x = INNER_X + TAG_CB_W + 1  # +1 for opening [
-        tag_field_w = BOX_W - TAG_CB_W - 7
-        buf = list(tag_values[i])
-        curses.curs_set(1)
-
-        while True:
-            display   = "".join(buf)
-            visible   = display[-tag_field_w:] if len(display) > tag_field_w else display
-            field_str = visible.ljust(tag_field_w)
-
-            stdscr.attron(C_SEL)
-            stdscr.addstr(row_y, tag_field_x, field_str)
-            stdscr.attroff(C_SEL)
-            stdscr.move(row_y, tag_field_x + min(len(visible), tag_field_w - 1))
-            stdscr.refresh()
-
-            ch = stdscr.getch()
-
-            if ch == 27:
-                stdscr.nodelay(True)
-                seq = [ch]
-                while True:
-                    nc = stdscr.getch()
-                    if nc == -1:
-                        break
-                    seq.append(nc)
-                stdscr.nodelay(False)
-                seq_str = "".join(chr(c) if 0 <= c < 256 else "" for c in seq)
-                if "\x1b[200~" in seq_str:
-                    inner = seq_str.replace("\x1b[200~", "").replace("\x1b[201~", "")
-                    buf.extend(c for c in inner if 32 <= ord(c) <= 126)
-                    break
-                else:
-                    buf = list(tag_values[i])
-                    break
-            elif ch in (10, 13):
-                break
-            elif ch in (curses.KEY_BACKSPACE, 127, 8):
-                if buf:
-                    buf.pop()
-            elif 32 <= ch <= 126:
-                buf.append(chr(ch))
-
-        curses.curs_set(0)
-        tag_values[i] = "".join(buf)
-
-    def edit_slideshow():
-        nonlocal slideshow_interval
-        h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
-        ss_field_x = INNER_X + len(SS_LABEL) + 1
-        ss_field_w = (BOX_X + BOX_W - 1) - ss_field_x - 3
-        buf = list(slideshow_interval)
-        curses.curs_set(1)
-
-        while True:
-            display   = "".join(buf)
-            visible   = display[-ss_field_w:] if len(display) > ss_field_w else display
-            field_str = visible.ljust(ss_field_w)
-            stdscr.attron(C_SEL)
-            stdscr.addstr(SS_ROW, ss_field_x, field_str)
-            stdscr.attroff(C_SEL)
-            stdscr.move(SS_ROW, ss_field_x + min(len(visible), ss_field_w - 1))
-            stdscr.refresh()
-
-            ch = stdscr.getch()
-            if ch in (10, 13):
-                break
-            elif ch == 27:
-                buf = list(slideshow_interval)
-                break
-            elif ch in (curses.KEY_BACKSPACE, 127, 8):
-                if buf:
-                    buf.pop()
-            elif 32 <= ch <= 126:
-                buf.append(chr(ch))
-
-        curses.curs_set(0)
-        slideshow_interval = "".join(buf)
-
-    # Main loop
     while True:
-        draw()
+        draw(stdscr, state, colors)
         key = stdscr.getch()
 
         if key == ord('q'):
-            # Disable bracketed paste before exiting
-            import sys
+            save_state(state)
             sys.stdout.write("\033[?2004l")
             sys.stdout.flush()
             break
@@ -312,36 +281,8 @@ def open_settings(stdscr):
             try:
                 _, mx, my, _, bstate = curses.getmouse()
                 if bstate & curses.BUTTON1_CLICKED:
-                    h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
-
-                    if my == SS_ROW:
-                        ss_field_x = INNER_X + len(SS_LABEL) + 1
-                        if mx >= ss_field_x:
-                            edit_slideshow()
-
-                    elif my == RULE34_ROW:
-                        if mx < INNER_X + CHECKBOX_W:
-                            selected_api = 0
-                        elif mx >= field_x - 1:
-                            r34_api_key = edit_key(RULE34_ROW, r34_api_key)
-
-                    elif my == GELBOORU_ROW:
-                        if mx < INNER_X + CHECKBOX_W:
-                            selected_api = 1
-                        elif mx >= field_x - 1:
-                            gb_api_key = edit_key(GELBOORU_ROW, gb_api_key)
-
-                    elif tag_first_row() <= my < tag_first_row() + len(tags_checked):
-                        i = my - tag_first_row()
-                        tag_field_x = INNER_X + TAG_CB_W + 1
-                        if mx < INNER_X + TAG_CB_W:
-                            tags_checked[i] = not tags_checked[i]
-                        elif mx >= tag_field_x:
-                            edit_tag(i, my)
-
-                    elif my == btn_row() and mx >= INNER_X and mx < INNER_X + len("[ + Add Tag ]"):
-                        tags_checked.append(False)
-                        tag_values.append("")
-
+                    on_click(stdscr, mx, my, state, colors)
             except curses.error:
                 pass
+
+    return state
