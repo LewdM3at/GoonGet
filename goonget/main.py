@@ -27,17 +27,6 @@ def main():
         tags = get_default_tags()
         print("Default Tags:", ", ".join(tags) if tags else "(none)")
         return
-    # add default tag(s)
-    if args and args[0] == "--tags-add" and len(args) > 1: 
-        add_default_tag(args[1]) 
-        print(f"Added Tag(s): {args[1]}") 
-        return
-
-    # remove tag(s)
-    if args and args[0] == "--tags-remove" and len(args) > 1: 
-        remove_default_tag(args[1]) 
-        print(f"Removed Tag(s): {args[1]}") 
-        return
 
     # show help page
     if args and args[0] in ("--help", "--h"):
@@ -71,13 +60,6 @@ def main():
         print(f"Slideshow timer: {get_slideshow_timer()} seconds")
         return
 
-    # set the slideshow timer
-    if args[0].startswith("--ss=") or args[0].startswith("--slideshow="):
-        flag, value = args[0].split("=", 1)
-        set_slideshow_timer(int(value))
-        print(f"Slideshow timer set to {value} seconds")
-        return
-
     # flag to use the slideshow
     if args[0] in ("--ss", "--slideshow") and len(args) > 1:
         # API Credentials check
@@ -89,13 +71,6 @@ def main():
         # filter out GIFs 
         urls = [u for u in urls if not u.lower().endswith(".gif")]
         display_slideshow(urls)
-        return
-
-    # source setting
-    if args and args[0].startswith("--source="):
-        flag, value = args[0].split("=", 1)
-        set_source(value)
-        print(f"Source set to: {value}")
         return
 
     # get source
