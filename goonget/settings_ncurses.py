@@ -36,8 +36,16 @@ def open_settings(stdscr):
     CHECKBOX_W   = len("[ ] Gelbooru.com   ")  # widest label + gap before API Key:
     KEY_LABEL    = "API Key: "
 
+    # ── Slideshow box layout ──────────────────────────────────────────────────
+    SS_BOX_Y   = BOX_Y + BOX_H + 1
+    SS_BOX_H   = 4  # top border + 1 pad + 1 entry + 1 pad + bottom border — wait, that's 5
+    SS_BOX_H   = 5
+    SS_ROW     = SS_BOX_Y + 2
+    SS_LABEL   = "Interval (s): "
+    slideshow_interval = ""
+
     # ── Default Tags box layout ───────────────────────────────────────────────
-    TAGS_BOX_Y   = BOX_Y + BOX_H + 1
+    TAGS_BOX_Y   = SS_BOX_Y + SS_BOX_H + 1
     tags_checked = [False]
     tag_values   = [""]
 
@@ -107,6 +115,17 @@ def open_settings(stdscr):
         stdscr.addstr(GELBOORU_ROW, INNER_X + CHECKBOX_W, KEY_LABEL)
         display = gb_api_key[-FIELD_W:] if len(gb_api_key) > FIELD_W else gb_api_key
         stdscr.addstr(GELBOORU_ROW, field_x - 1, "[" + display.ljust(FIELD_W) + "]")
+        stdscr.attroff(C_NORMAL)
+
+        # ── Slideshow box ─────────────────────────────────────────────────────
+        draw_box(SS_BOX_Y, SS_BOX_H, BOX_W, "Slideshow")
+
+        ss_field_x = INNER_X + len(SS_LABEL) + 1  # +1 for opening [
+        ss_field_w = (BOX_X + BOX_W - 1) - ss_field_x - 2
+        display = slideshow_interval[-ss_field_w:] if len(slideshow_interval) > ss_field_w else slideshow_interval
+        stdscr.attron(C_NORMAL)
+        stdscr.addstr(SS_ROW, INNER_X, SS_LABEL)
+        stdscr.addstr(SS_ROW, INNER_X + len(SS_LABEL), "[" + display.ljust(ss_field_w) + "]")
         stdscr.attroff(C_NORMAL)
 
         # ── Default Tags box ──────────────────────────────────────────────────
@@ -244,6 +263,39 @@ def open_settings(stdscr):
         curses.curs_set(0)
         tag_values[i] = "".join(buf)
 
+    def edit_slideshow():
+        nonlocal slideshow_interval
+        h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
+        ss_field_x = INNER_X + len(SS_LABEL) + 1
+        ss_field_w = (BOX_X + BOX_W - 1) - ss_field_x - 3
+        buf = list(slideshow_interval)
+        curses.curs_set(1)
+
+        while True:
+            display   = "".join(buf)
+            visible   = display[-ss_field_w:] if len(display) > ss_field_w else display
+            field_str = visible.ljust(ss_field_w)
+            stdscr.attron(C_SEL)
+            stdscr.addstr(SS_ROW, ss_field_x, field_str)
+            stdscr.attroff(C_SEL)
+            stdscr.move(SS_ROW, ss_field_x + min(len(visible), ss_field_w - 1))
+            stdscr.refresh()
+
+            ch = stdscr.getch()
+            if ch in (10, 13):
+                break
+            elif ch == 27:
+                buf = list(slideshow_interval)
+                break
+            elif ch in (curses.KEY_BACKSPACE, 127, 8):
+                if buf:
+                    buf.pop()
+            elif 32 <= ch <= 126:
+                buf.append(chr(ch))
+
+        curses.curs_set(0)
+        slideshow_interval = "".join(buf)
+
     # Main loop
     while True:
         draw()
@@ -262,7 +314,12 @@ def open_settings(stdscr):
                 if bstate & curses.BUTTON1_CLICKED:
                     h, w, BOX_W, INNER_X, field_x, FIELD_W = get_dims()
 
-                    if my == RULE34_ROW:
+                    if my == SS_ROW:
+                        ss_field_x = INNER_X + len(SS_LABEL) + 1
+                        if mx >= ss_field_x:
+                            edit_slideshow()
+
+                    elif my == RULE34_ROW:
                         if mx < INNER_X + CHECKBOX_W:
                             selected_api = 0
                         elif mx >= field_x - 1:
@@ -288,4 +345,3 @@ def open_settings(stdscr):
 
             except curses.error:
                 pass
-
