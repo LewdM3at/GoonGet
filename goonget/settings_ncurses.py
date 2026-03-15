@@ -40,6 +40,7 @@ def load_state():
         "r34_key":      cfg.get("rule34_api_key", ""),
         "gb_key":       cfg.get("gelbooru_api_key", ""),
         "ss_interval":  str(cfg.get("slideshow_timer", "")),
+        "size":         cfg.get("size", ""),
         "tags_checked": tags_checked,
         "tag_values":   tag_values,
     }
@@ -61,6 +62,9 @@ def save_state(state):
 
     if state["ss_interval"].strip().isdigit():
         cfg["slideshow_timer"] = int(state["ss_interval"].strip())
+
+    size = state["size"].strip()
+    cfg["size"] = size if _valid_size(size) else "Fill"
 
     # Save all non-empty tags with their active state as objects
     cfg["default_tags"] = [
@@ -89,7 +93,12 @@ SS_BOX_H = 5
 SS_ROW   = SS_BOX_Y + 2
 SS_LABEL = "Interval (s): "
 
-TAGS_BOX_Y = SS_BOX_Y + SS_BOX_H + 1
+SIZE_BOX_Y = SS_BOX_Y + SS_BOX_H + 1
+SIZE_BOX_H = 5
+SIZE_ROW   = SIZE_BOX_Y + 2
+SIZE_LABEL = "Size (WxH): "
+
+TAGS_BOX_Y = SIZE_BOX_Y + SIZE_BOX_H + 1
 TAG_CB_W   = len("[x] ")
 
 MIN_FIELD = 10  # minimum field width when empty
@@ -110,6 +119,11 @@ def field_truncated(value, max_width):
     if len(value) > max_width:
         value = value[:max_width - 3] + "..."
     return "[ " + value + " ]"
+
+def _valid_size(value: str) -> bool:
+    """Return True if value matches NxN format (e.g. 1920x1080)."""
+    import re
+    return bool(re.fullmatch(r"\d+x\d+", value.strip(), re.IGNORECASE))
 
 def tags_box_h(tags):
     # top border + pad + N rows + button row + pad + bottom border
@@ -192,6 +206,76 @@ def inline_edit(stdscr, row, field_x, initial, c_sel):
     return "".join(buf)
 
 
+def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_accent, c_normal):
+    """
+    Like inline_edit but only allows digits and a single 'x' separator.
+    Shows a warning if the format is invalid on confirm.
+    Falls back to 'Fill' if left empty.
+    """
+    buf = list(initial)
+    curses.curs_set(1)
+
+    def allowed(ch, current):
+        """Only allow digits and one 'x' (case-insensitive)."""
+        if ch.isdigit():
+            return True
+        if ch.lower() == 'x' and 'x' not in current.lower():
+            return True
+        return False
+
+    warning = ""
+
+    while True:
+        value    = "".join(buf)
+        rendered = field(value)
+        cursor_x = field_x + 2 + len(value)
+
+        stdscr.attron(c_sel)
+        stdscr.addstr(row, field_x, rendered)
+        stdscr.attroff(c_sel)
+
+        # show inline warning if set
+        if warning:
+            stdscr.attron(c_accent)
+            stdscr.addstr(row + 1, field_x, warning)
+            stdscr.attroff(c_accent)
+
+        stdscr.move(row, cursor_x)
+        stdscr.refresh()
+
+        ch = stdscr.getch()
+
+        if ch == 27:  # ESC — cancel
+            stdscr.nodelay(True)
+            seq = []
+            while True:
+                nc = stdscr.getch()
+                if nc == -1:
+                    break
+                seq.append(chr(nc) if 0 <= nc < 256 else "")
+            stdscr.nodelay(False)
+            seq_str = "".join(seq)
+            if "[200~" not in seq_str:
+                buf = list(initial)
+                break
+        elif ch in (10, 13):  # Enter — validate
+            if not value or _valid_size(value):
+                break
+            warning = " ✗ Format must be WxH (e.g. 1920x1080) "
+        elif ch in (curses.KEY_BACKSPACE, 127, 8):
+            if buf:
+                buf.pop()
+            warning = ""
+        elif 32 <= ch <= 126:
+            c = chr(ch)
+            if allowed(c, value):
+                buf.append(c)
+                warning = ""
+
+    curses.curs_set(0)
+    return "".join(buf)  # empty string = caller treats as "Fill"
+
+
 # ── Main draw ─────────────────────────────────────────────────────────────────
 
 def draw(stdscr, state, colors):
@@ -219,6 +303,11 @@ def draw(stdscr, state, colors):
     draw_box(stdscr, SS_BOX_Y, SS_BOX_H, "Slideshow", c_accent)
     write(stdscr, SS_ROW, INNER_X, SS_LABEL + field(state["ss_interval"]), c_normal)
 
+    # Size box
+    draw_box(stdscr, SIZE_BOX_Y, SIZE_BOX_H, "Size", c_accent)
+    size_display = state["size"] if state["size"] else "Fill"
+    write(stdscr, SIZE_ROW, INNER_X, SIZE_LABEL + field(size_display), c_normal)
+
     # Default Tags box
     tags = state["tags_checked"]
     draw_box(stdscr, TAGS_BOX_Y, tags_box_h(tags), "Default Tags", c_accent)
@@ -237,7 +326,7 @@ def draw(stdscr, state, colors):
 # ── Click handler ─────────────────────────────────────────────────────────────
 
 def on_click(stdscr, mx, my, state, colors):
-    _, c_normal, c_sel, _ = colors
+    c_accent, c_normal, c_sel, _ = colors
     tags = state["tags_checked"]
 
     if my == RULE34_ROW:
@@ -254,6 +343,10 @@ def on_click(stdscr, mx, my, state, colors):
 
     elif my == SS_ROW and mx >= INNER_X + len(SS_LABEL):
         state["ss_interval"] = inline_edit(stdscr, my, INNER_X + len(SS_LABEL), state["ss_interval"], c_sel)
+
+    elif my == SIZE_ROW and mx >= INNER_X + len(SIZE_LABEL):
+        result = inline_edit_size(stdscr, my, INNER_X + len(SIZE_LABEL), state["size"], c_sel, c_accent, c_normal)
+        state["size"] = result  # empty = save as "Fill" on quit
 
     elif tag_row(0) <= my < tag_row(len(tags)):
         i = my - tag_row(0)
