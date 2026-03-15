@@ -165,9 +165,13 @@ def inline_edit(stdscr, row, field_x, initial, c_sel):
     curses.curs_set(1)
 
     while True:
+        _, w  = stdscr.getmaxyx()
         value    = "".join(buf)
-        rendered = field(value)
-        cursor_x = field_x + 2 + len(value)  # skip "[ "
+        # clamp display to available width so we never write past the terminal edge
+        max_w    = w - field_x - 4  # 4 = "[ " + " ]"
+        display  = value[-max_w:] if len(value) > max_w else value
+        rendered = "[ " + display + " ]"
+        cursor_x = min(field_x + 2 + len(display), w - 2)
 
         stdscr.attron(c_sel)
         stdscr.addstr(row, field_x, rendered)
@@ -332,13 +336,13 @@ def on_click(stdscr, mx, my, state, colors):
     if my == RULE34_ROW:
         if mx < INNER_X + CHECKBOX_W:
             state["selected_api"] = 0
-        elif mx >= INNER_X + CHECKBOX_W + len(KEY_LABEL):
+        else:
             state["r34_key"] = inline_edit(stdscr, my, INNER_X + CHECKBOX_W + len(KEY_LABEL), state["r34_key"], c_sel)
 
     elif my == GELBOORU_ROW:
         if mx < INNER_X + CHECKBOX_W:
             state["selected_api"] = 1
-        elif mx >= INNER_X + CHECKBOX_W + len(KEY_LABEL):
+        else:
             state["gb_key"] = inline_edit(stdscr, my, INNER_X + CHECKBOX_W + len(KEY_LABEL), state["gb_key"], c_sel)
 
     elif my == SS_ROW and mx >= INNER_X + len(SS_LABEL):
@@ -398,7 +402,7 @@ def open_settings(stdscr):
         elif key == curses.KEY_MOUSE:
             try:
                 _, mx, my, _, bstate = curses.getmouse()
-                if bstate & curses.BUTTON1_CLICKED:
+                if bstate & (curses.BUTTON1_CLICKED | curses.BUTTON1_PRESSED | curses.BUTTON1_RELEASED):
                     on_click(stdscr, mx, my, state, colors)
             except curses.error:
                 pass

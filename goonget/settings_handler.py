@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from getpass import getpass
 
 CONFIG_DIR  = Path.home() / ".config" / "goonget"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -36,32 +35,27 @@ def set_source(source: str):
     _save_config(cfg)
 
 
-def load_api_credentials() -> str:
+def load_api_credentials() -> str | None:
     cfg    = _load_config()
     source = get_source()
 
-    if source == "rule34.xxx" and "rule34_api_key" in cfg:
-        return cfg["rule34_api_key"]
-    if source == "gelbooru.com" and "gelbooru_api_key" in cfg:
-        return cfg["gelbooru_api_key"]
-
-    # No key found — prompt the user
     if source == "rule34.xxx":
-        print("No Rule34 API Key found. Get it from https://rule34.xxx/index.php?page=account&s=options")
-        api_key = getpass("Enter your Rule34 API Key: ").strip()
-    else:
-        print("No Gelbooru API Key found. Get it from https://gelbooru.com/index.php?page=account&s=options")
-        api_key = getpass("Enter your Gelbooru API Key: ").strip()
+        key = cfg.get("rule34_api_key", "").strip()
+        if key:
+            return key
+        print("No Rule34 API Key found.")
+        print("Get it from: https://rule34.xxx/index.php?page=account&s=options")
+        print("Then add it via: goonget --settings")
+        return None
 
-    cfg["source"] = source
-    if source == "rule34.xxx":
-        cfg["rule34_api_key"] = api_key
-    else:
-        cfg["gelbooru_api_key"] = api_key
-    _save_config(cfg)
-
-    print("API Access Credentials saved successfully.")
-    return api_key
+    if source == "gelbooru.com":
+        key = cfg.get("gelbooru_api_key", "").strip()
+        if key:
+            return key
+        print("No Gelbooru API Key found.")
+        print("Get it from: https://gelbooru.com/index.php?page=account&s=options")
+        print("Then add it via: goonget --settings")
+        return None
 
 
 # ── Size ──────────────────────────────────────────────────────────────────────

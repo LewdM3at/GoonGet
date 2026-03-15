@@ -60,6 +60,8 @@ def main():
 
     # NORMAL MODE — no args or just tags, use defaults
     api_credentials = load_api_credentials()
+    if not api_credentials:
+        return
     final_tags = build_tags(args)
     #print(final_tags)
     urls = fetch_posts(api_credentials, final_tags)
