@@ -20,7 +20,6 @@ def load_state():
     source       = cfg.get("source", "rule34.xxx")
     default_tags = cfg.get("default_tags", [])
 
-    # Support both old format (plain strings) and new format ({"tag": ..., "active": ...})
     tags_checked = []
     tag_values   = []
     for t in default_tags:
@@ -66,7 +65,6 @@ def save_state(state):
     size = state["size"].strip()
     cfg["size"] = size if _valid_size(size) else "Fill"
 
-    # Save all non-empty tags with their active state as objects
     cfg["default_tags"] = [
         {"tag": v.strip(), "active": checked}
         for checked, v in zip(state["tags_checked"], state["tag_values"])
@@ -77,6 +75,7 @@ def save_state(state):
     CONFIG_FILE.write_text(json.dumps(cfg, indent=4))
 
 
+# ── Layout constants ──────────────────────────────────────────────────────────
 
 BOX_X   = 3
 INNER_X = BOX_X + 2
@@ -101,19 +100,17 @@ SIZE_LABEL = "Size (WxH): "
 TAGS_BOX_Y = SIZE_BOX_Y + SIZE_BOX_H + 1
 TAG_CB_W   = len("[x] ")
 
-MIN_FIELD = 10  # minimum field width when empty
+MIN_FIELD = 10
 
 
-# ── Pure helpers (no curses, no state) ───────────────────────────────────────
+# ── Pure helpers ──────────────────────────────────────────────────────────────
 
 def field(value):
-    """Render [ value ] — default MIN_FIELD spacing when empty, 1 space each side when not."""
     if not value:
         return "[ " + " " * MIN_FIELD + " ]"
     return "[ " + value + " ]"
 
 def field_truncated(value, max_width):
-    """Like field() but clips to max_width chars, appending ... if clipped."""
     if not value:
         return "[ " + " " * min(MIN_FIELD, max_width) + " ]"
     if len(value) > max_width:
@@ -121,12 +118,10 @@ def field_truncated(value, max_width):
     return "[ " + value + " ]"
 
 def _valid_size(value: str) -> bool:
-    """Return True if value matches NxN format (e.g. 1920x1080)."""
     import re
     return bool(re.fullmatch(r"\d+x\d+", value.strip(), re.IGNORECASE))
 
 def tags_box_h(tags):
-    # top border + pad + N rows + button row + pad + bottom border
     return len(tags) + 5
 
 def tag_row(i):
@@ -156,19 +151,32 @@ def write(stdscr, row, col, text, attr):
     stdscr.addstr(row, col, text)
     stdscr.attroff(attr)
 
+def write_hint(stdscr, row, field_x, msg, c_hint):
+    """Write a small hint message just below a field."""
+    stdscr.attron(c_hint)
+    stdscr.addstr(row + 1, field_x, msg)
+    stdscr.attroff(c_hint)
+
+def clear_hint(stdscr, row, field_x, width):
+    """Erase the hint line so it doesn't linger."""
+    stdscr.addstr(row + 1, field_x, " " * width)
+
 
 # ── Inline field editor ───────────────────────────────────────────────────────
 
-def inline_edit(stdscr, row, field_x, initial, c_sel):
-    """Edit a field in-place. Returns the new string value."""
-    buf = list(initial)
+def inline_edit(stdscr, row, field_x, initial, c_sel, c_hint):
+    """
+    Generic inline editor. Shows 'Press Enter to confirm' while editing.
+    Returns the new string value.
+    """
+    buf  = list(initial)
+    hint = " Press ENTER to confirm "
     curses.curs_set(1)
 
     while True:
         _, w  = stdscr.getmaxyx()
         value    = "".join(buf)
-        # clamp display to available width so we never write past the terminal edge
-        max_w    = w - field_x - 4  # 4 = "[ " + " ]"
+        max_w    = w - field_x - 4
         display  = value[-max_w:] if len(value) > max_w else value
         rendered = "[ " + display + " ]"
         cursor_x = min(field_x + 2 + len(display), w - 2)
@@ -176,12 +184,13 @@ def inline_edit(stdscr, row, field_x, initial, c_sel):
         stdscr.attron(c_sel)
         stdscr.addstr(row, field_x, rendered)
         stdscr.attroff(c_sel)
+        write_hint(stdscr, row, field_x, hint, c_hint)
         stdscr.move(row, cursor_x)
         stdscr.refresh()
 
         ch = stdscr.getch()
 
-        if ch == 27:  # ESC or bracketed paste
+        if ch == 27:
             stdscr.nodelay(True)
             seq = []
             while True:
@@ -191,11 +200,11 @@ def inline_edit(stdscr, row, field_x, initial, c_sel):
                 seq.append(chr(nc) if 0 <= nc < 256 else "")
             stdscr.nodelay(False)
             seq_str = "".join(seq)
-            if "[200~" in seq_str:  # bracketed paste — auto confirm
+            if "[200~" in seq_str:
                 pasted = seq_str.split("[200~", 1)[-1].split("[201~")[0]
                 buf.extend(c for c in pasted if 32 <= ord(c) <= 126)
                 break
-            else:  # plain ESC — cancel
+            else:
                 buf = list(initial)
                 break
         elif ch in (10, 13):
@@ -206,28 +215,30 @@ def inline_edit(stdscr, row, field_x, initial, c_sel):
         elif 32 <= ch <= 126:
             buf.append(chr(ch))
 
+    clear_hint(stdscr, row, field_x, len(hint))
     curses.curs_set(0)
     return "".join(buf)
 
 
-def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_accent, c_normal):
+def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_hint):
     """
-    Like inline_edit but only allows digits and a single 'x' separator.
-    Shows a warning if the format is invalid on confirm.
-    Falls back to 'Fill' if left empty.
+    Size editor: only allows digits and one 'x'.
+    Shows 'Press Enter to confirm' while editing,
+    switches to an error if the format is wrong on confirm.
     """
     buf = list(initial)
     curses.curs_set(1)
 
     def allowed(ch, current):
-        """Only allow digits and one 'x' (case-insensitive)."""
         if ch.isdigit():
             return True
         if ch.lower() == 'x' and 'x' not in current.lower():
             return True
         return False
 
-    warning = ""
+    hint    = " Press Enter to confirm "
+    warning = " ✗ Format must be WxH (e.g. 1920x1080) "
+    msg     = hint  # start with the normal hint
 
     while True:
         value    = "".join(buf)
@@ -237,19 +248,13 @@ def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_accent, c_normal):
         stdscr.attron(c_sel)
         stdscr.addstr(row, field_x, rendered)
         stdscr.attroff(c_sel)
-
-        # show inline warning if set
-        if warning:
-            stdscr.attron(c_accent)
-            stdscr.addstr(row + 1, field_x, warning)
-            stdscr.attroff(c_accent)
-
+        write_hint(stdscr, row, field_x, msg.ljust(len(warning)), c_hint)
         stdscr.move(row, cursor_x)
         stdscr.refresh()
 
         ch = stdscr.getch()
 
-        if ch == 27:  # ESC — cancel
+        if ch == 27:
             stdscr.nodelay(True)
             seq = []
             while True:
@@ -258,26 +263,26 @@ def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_accent, c_normal):
                     break
                 seq.append(chr(nc) if 0 <= nc < 256 else "")
             stdscr.nodelay(False)
-            seq_str = "".join(seq)
-            if "[200~" not in seq_str:
+            if "[200~" not in "".join(seq):
                 buf = list(initial)
                 break
-        elif ch in (10, 13):  # Enter — validate
+        elif ch in (10, 13):
             if not value or _valid_size(value):
                 break
-            warning = " ✗ Format must be WxH (e.g. 40x20) "
+            msg = warning  # swap hint to error, stay in edit mode
         elif ch in (curses.KEY_BACKSPACE, 127, 8):
             if buf:
                 buf.pop()
-            warning = ""
+            msg = hint  # reset to normal hint on any edit
         elif 32 <= ch <= 126:
             c = chr(ch)
             if allowed(c, value):
                 buf.append(c)
-                warning = ""
+                msg = hint
 
+    clear_hint(stdscr, row, field_x, len(warning))
     curses.curs_set(0)
-    return "".join(buf)  # empty string = caller treats as "Fill"
+    return "".join(buf)
 
 
 # ── Main draw ─────────────────────────────────────────────────────────────────
@@ -287,7 +292,6 @@ def draw(stdscr, state, colors):
     h, w = stdscr.getmaxyx()
     stdscr.erase()
 
-    # Outer border + title
     stdscr.attron(c_normal); stdscr.border(); stdscr.attroff(c_normal)
     write(stdscr, 0, (w - 20) // 2, " GoonGet — Settings ", c_accent)
 
@@ -326,7 +330,6 @@ def draw(stdscr, state, colors):
         write(stdscr, tag_row(i), INNER_X + len(cb) + 1, field(value), c_field)
     write(stdscr, btn_row(tags), INNER_X, "[ + Add Tag ]", c_btn)
 
-    # Hint bar
     hint = " Click checkbox to select   Click field to edit   q Quit "
     write(stdscr, h - 1, max(0, (w - len(hint)) // 2), hint[:w - 1], c_accent)
 
@@ -337,33 +340,33 @@ def draw(stdscr, state, colors):
 
 def on_click(stdscr, mx, my, state, colors):
     c_accent, c_normal, c_sel, _, c_check, c_field, c_uncheck = colors
-    tags = state["tags_checked"]
+    c_hint = c_accent  # reuse accent color for hints
+    tags   = state["tags_checked"]
 
     if my == RULE34_ROW:
         if mx < INNER_X + CHECKBOX_W:
             state["selected_api"] = 0
         else:
-            state["r34_key"] = inline_edit(stdscr, my, INNER_X + CHECKBOX_W + len(KEY_LABEL), state["r34_key"], c_sel)
+            state["r34_key"] = inline_edit(stdscr, my, INNER_X + CHECKBOX_W + len(KEY_LABEL), state["r34_key"], c_sel, c_hint)
 
     elif my == GELBOORU_ROW:
         if mx < INNER_X + CHECKBOX_W:
             state["selected_api"] = 1
         else:
-            state["gb_key"] = inline_edit(stdscr, my, INNER_X + CHECKBOX_W + len(KEY_LABEL), state["gb_key"], c_sel)
+            state["gb_key"] = inline_edit(stdscr, my, INNER_X + CHECKBOX_W + len(KEY_LABEL), state["gb_key"], c_sel, c_hint)
 
     elif my == SS_ROW and mx >= INNER_X + len(SS_LABEL):
-        state["ss_interval"] = inline_edit(stdscr, my, INNER_X + len(SS_LABEL), state["ss_interval"], c_sel)
+        state["ss_interval"] = inline_edit(stdscr, my, INNER_X + len(SS_LABEL), state["ss_interval"], c_sel, c_hint)
 
     elif my == SIZE_ROW and mx >= INNER_X + len(SIZE_LABEL):
-        result = inline_edit_size(stdscr, my, INNER_X + len(SIZE_LABEL), state["size"], c_sel, c_accent, c_normal)
-        state["size"] = result  # empty = save as "Fill" on quit
+        state["size"] = inline_edit_size(stdscr, my, INNER_X + len(SIZE_LABEL), state["size"], c_sel, c_hint)
 
     elif tag_row(0) <= my < tag_row(len(tags)):
         i = my - tag_row(0)
         if mx < INNER_X + TAG_CB_W:
             tags[i] = not tags[i]
         elif mx >= INNER_X + TAG_CB_W + 1:
-            state["tag_values"][i] = inline_edit(stdscr, my, INNER_X + TAG_CB_W + 1, state["tag_values"][i], c_sel)
+            state["tag_values"][i] = inline_edit(stdscr, my, INNER_X + TAG_CB_W + 1, state["tag_values"][i], c_sel, c_hint)
 
     elif my == btn_row(tags) and INNER_X <= mx < INNER_X + len("[ + Add Tag ]"):
         state["tags_checked"].append(False)
@@ -378,6 +381,14 @@ def open_settings(stdscr):
     curses.curs_set(0)
     curses.mousemask(curses.ALL_MOUSE_EVENTS)
 
+    curses.init_pair(1, curses.COLOR_CYAN,   -1)
+    curses.init_pair(2, curses.COLOR_WHITE,  -1)
+    curses.init_pair(3, curses.COLOR_BLACK,  curses.COLOR_CYAN)
+    curses.init_pair(4, curses.COLOR_BLUE,   -1)
+    curses.init_pair(5, curses.COLOR_YELLOW, -1)  # checkbox checked
+    curses.init_pair(6, curses.COLOR_GREEN,  -1)  # input fields
+    curses.init_pair(7, curses.COLOR_YELLOW, -1)  # checkbox unchecked (dim = orange)
+
     colors = (
         curses.color_pair(1) | curses.A_BOLD,  # c_accent  — cyan bold
         curses.color_pair(2),                  # c_normal  — white
@@ -387,14 +398,6 @@ def open_settings(stdscr):
         curses.color_pair(6),                  # c_field   — green
         curses.color_pair(7),                  # c_uncheck — yellow dim = orange (unchecked)
     )
-
-    curses.init_pair(1, curses.COLOR_CYAN,   -1)
-    curses.init_pair(2, curses.COLOR_WHITE,  -1)
-    curses.init_pair(3, curses.COLOR_BLACK,  curses.COLOR_CYAN)
-    curses.init_pair(4, curses.COLOR_BLUE,   -1)
-    curses.init_pair(5, curses.COLOR_YELLOW, -1)  # checkbox checked
-    curses.init_pair(6, curses.COLOR_GREEN,  -1)  # input fields
-    curses.init_pair(7, curses.COLOR_YELLOW, -1)  # checkbox unchecked (dim = orange)
 
     state = load_state()
 
