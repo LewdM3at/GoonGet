@@ -102,10 +102,9 @@ TAGS_VISIBLE_MAX = 15
 
 MIN_FIELD = 10
 MIN_W     = 60
-MIN_H     = TAGS_BOX_Y + 6  # enough to show box + at least 1 tag + button
+MIN_H     = TAGS_BOX_Y + 7  # enough to show box + at least 1 tag + blank row + button
 
-
-# ── Dynamic tags helpers ──────────────────────────────────────────────────────
+# ── Dynamic tags helpers (add blank row before Add button) ───────────────────
 
 def tags_visible(stdscr):
     """How many tag rows fit in the terminal, capped at TAGS_VISIBLE_MAX."""
@@ -116,14 +115,15 @@ def tags_visible(stdscr):
     return max(1, min(TAGS_VISIBLE_MAX, available))
 
 def tags_box_h(n_visible):
-    # top border + n tag rows + add-button row + bottom border
-    return n_visible + 3
+    # top border + n tag rows + blank spacer row + add-button row + bottom border
+    return n_visible + 4
 
 def tag_row(screen_i):
     return TAGS_BOX_Y + 2 + screen_i
 
 def btn_row(n_visible):
-    return TAGS_BOX_Y + 2 + n_visible
+    # leave one blank row between last tag and the button
+    return TAGS_BOX_Y + 2 + n_visible + 1
 
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────
