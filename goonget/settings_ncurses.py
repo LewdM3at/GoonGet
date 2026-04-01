@@ -8,7 +8,6 @@ CONFIG_FILE = Path.home() / ".config" / "goonget" / "config.json"
 # ── Config load / save ────────────────────────────────────────────────────────
 
 def load_state():
-    """Read config.json and map it to the UI state dict."""
     if CONFIG_FILE.exists():
         try:
             cfg = json.loads(CONFIG_FILE.read_text())
@@ -42,11 +41,11 @@ def load_state():
         "size":         cfg.get("size", ""),
         "tags_checked": tags_checked,
         "tag_values":   tag_values,
+        "tag_scroll":   0,
     }
 
 
 def save_state(state):
-    """Write the UI state back to config.json, preserving any unrelated keys."""
     if CONFIG_FILE.exists():
         try:
             cfg = json.loads(CONFIG_FILE.read_text())
@@ -97,10 +96,34 @@ SIZE_BOX_H = 5
 SIZE_ROW   = SIZE_BOX_Y + 2
 SIZE_LABEL = "Size (WxH): "
 
-TAGS_BOX_Y = SIZE_BOX_Y + SIZE_BOX_H + 1
-TAG_CB_W   = len("[x] ")
+TAGS_BOX_Y       = SIZE_BOX_Y + SIZE_BOX_H + 1
+TAG_CB_W         = len("[x] ")
+TAGS_VISIBLE_MAX = 15
 
 MIN_FIELD = 10
+MIN_W     = 60
+MIN_H     = TAGS_BOX_Y + 7  # enough to show box + at least 1 tag + blank row + button
+
+# ── Dynamic tags helpers (add blank row before Add button) ───────────────────
+
+def tags_visible(stdscr):
+    """How many tag rows fit in the terminal, capped at TAGS_VISIBLE_MAX."""
+    h, _ = stdscr.getmaxyx()
+    # Available rows: terminal height minus fixed content above, minus
+    # box top border + bottom border + add-button row + hint row + 1 padding
+    available = h - TAGS_BOX_Y - 5
+    return max(1, min(TAGS_VISIBLE_MAX, available))
+
+def tags_box_h(n_visible):
+    # top border + n tag rows + blank spacer row + add-button row + bottom border
+    return n_visible + 4
+
+def tag_row(screen_i):
+    return TAGS_BOX_Y + 2 + screen_i
+
+def btn_row(n_visible):
+    # leave one blank row between last tag and the button
+    return TAGS_BOX_Y + 2 + n_visible + 1
 
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────
@@ -121,15 +144,6 @@ def _valid_size(value: str) -> bool:
     import re
     return bool(re.fullmatch(r"\d+x\d+", value.strip(), re.IGNORECASE))
 
-def tags_box_h(tags):
-    return len(tags) + 5
-
-def tag_row(i):
-    return TAGS_BOX_Y + 2 + i
-
-def btn_row(tags):
-    return TAGS_BOX_Y + 2 + len(tags) + 1
-
 
 # ── Drawing helpers ───────────────────────────────────────────────────────────
 
@@ -139,42 +153,71 @@ def draw_box(stdscr, y, h, label, c_accent):
     section = f" {label} "
     top     = "┌─" + section + "─" * (bw - len(section) - 3) + "┐"
     stdscr.attron(c_accent)
-    stdscr.addstr(y, BOX_X, top)
-    for row in range(1, h - 1):
-        stdscr.addstr(y + row, BOX_X,         "│")
-        stdscr.addstr(y + row, BOX_X + bw - 1, "│")
-    stdscr.addstr(y + h - 1, BOX_X, "└" + "─" * (bw - 2) + "┘")
+    try:
+        stdscr.addstr(y, BOX_X, top)
+        for row in range(1, h - 1):
+            stdscr.addstr(y + row, BOX_X,          "│")
+            stdscr.addstr(y + row, BOX_X + bw - 1, "│")
+        stdscr.addstr(y + h - 1, BOX_X, "└" + "─" * (bw - 2) + "┘")
+    except curses.error:
+        pass
     stdscr.attroff(c_accent)
 
 def write(stdscr, row, col, text, attr):
-    stdscr.attron(attr)
-    stdscr.addstr(row, col, text)
-    stdscr.attroff(attr)
+    try:
+        stdscr.attron(attr)
+        stdscr.addstr(row, col, text)
+        stdscr.attroff(attr)
+    except curses.error:
+        pass
 
 def write_hint(stdscr, row, field_x, msg, c_hint):
-    """Write a small hint message just below a field."""
-    stdscr.attron(c_hint)
-    stdscr.addstr(row + 1, field_x, msg)
-    stdscr.attroff(c_hint)
+    try:
+        stdscr.attron(c_hint)
+        stdscr.addstr(row + 1, field_x, msg)
+        stdscr.attroff(c_hint)
+    except curses.error:
+        pass
 
 def clear_hint(stdscr, row, field_x, width):
-    """Erase the hint line so it doesn't linger."""
-    stdscr.addstr(row + 1, field_x, " " * width)
+    try:
+        stdscr.addstr(row + 1, field_x, " " * width)
+    except curses.error:
+        pass
+
+
+# ── Too-small screen ──────────────────────────────────────────────────────────
+
+def draw_too_small(stdscr):
+    stdscr.erase()
+    h, w = stdscr.getmaxyx()
+    lines = [
+        "Terminal too small!",
+        f"Minimum size: {MIN_W}x{MIN_H}",
+        f"Current size: {w}x{h}",
+        "Please resize your terminal.",
+        "",
+        "Press q to quit.",
+    ]
+    for i, line in enumerate(lines):
+        y = h // 2 - len(lines) // 2 + i
+        x = max(0, (w - len(line)) // 2)
+        try:
+            stdscr.addstr(y, x, line)
+        except curses.error:
+            pass
+    stdscr.refresh()
 
 
 # ── Inline field editor ───────────────────────────────────────────────────────
 
 def inline_edit(stdscr, row, field_x, initial, c_sel, c_hint):
-    """
-    Generic inline editor. Shows 'Press Enter to confirm' while editing.
-    Returns the new string value.
-    """
     buf  = list(initial)
     hint = " Press ENTER to confirm "
     curses.curs_set(1)
 
     while True:
-        _, w  = stdscr.getmaxyx()
+        _, w     = stdscr.getmaxyx()
         value    = "".join(buf)
         max_w    = w - field_x - 4
         display  = value[-max_w:] if len(value) > max_w else value
@@ -182,7 +225,10 @@ def inline_edit(stdscr, row, field_x, initial, c_sel, c_hint):
         cursor_x = min(field_x + 2 + len(display), w - 2)
 
         stdscr.attron(c_sel)
-        stdscr.addstr(row, field_x, rendered)
+        try:
+            stdscr.addstr(row, field_x, rendered)
+        except curses.error:
+            pass
         stdscr.attroff(c_sel)
         write_hint(stdscr, row, field_x, hint, c_hint)
         stdscr.move(row, cursor_x)
@@ -221,11 +267,6 @@ def inline_edit(stdscr, row, field_x, initial, c_sel, c_hint):
 
 
 def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_hint):
-    """
-    Size editor: only allows digits and one 'x'.
-    Shows 'Press Enter to confirm' while editing,
-    switches to an error if the format is wrong on confirm.
-    """
     buf = list(initial)
     curses.curs_set(1)
 
@@ -237,8 +278,8 @@ def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_hint):
         return False
 
     hint    = " Press Enter to confirm "
-    warning = " ✗ Format must be WxH (e.g. 1920x1080) "
-    msg     = hint  # start with the normal hint
+    warning = " ✗ Format must be WxH (e.g. 1920x1080). Leave empty for Fill."
+    msg     = hint
 
     while True:
         value    = "".join(buf)
@@ -246,7 +287,10 @@ def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_hint):
         cursor_x = field_x + 2 + len(value)
 
         stdscr.attron(c_sel)
-        stdscr.addstr(row, field_x, rendered)
+        try:
+            stdscr.addstr(row, field_x, rendered)
+        except curses.error:
+            pass
         stdscr.attroff(c_sel)
         write_hint(stdscr, row, field_x, msg.ljust(len(warning)), c_hint)
         stdscr.move(row, cursor_x)
@@ -269,11 +313,11 @@ def inline_edit_size(stdscr, row, field_x, initial, c_sel, c_hint):
         elif ch in (10, 13):
             if not value or _valid_size(value):
                 break
-            msg = warning  # swap hint to error, stay in edit mode
+            msg = warning
         elif ch in (curses.KEY_BACKSPACE, 127, 8):
             if buf:
                 buf.pop()
-            msg = hint  # reset to normal hint on any edit
+            msg = hint
         elif 32 <= ch <= 126:
             c = chr(ch)
             if allowed(c, value):
@@ -292,10 +336,12 @@ def draw(stdscr, state, colors):
     h, w = stdscr.getmaxyx()
     stdscr.erase()
 
-    stdscr.attron(c_normal); stdscr.border(); stdscr.attroff(c_normal)
+    stdscr.attron(c_normal)
+    stdscr.border()
+    stdscr.attroff(c_normal)
     write(stdscr, 0, (w - 20) // 2, " GoonGet — Settings ", c_accent)
 
-    # API box
+    # ── API box ───────────────────────────────────────────────────────────────
     draw_box(stdscr, API_BOX_Y, API_BOX_H, "API", c_accent)
     r34_cb = "[x]" if state["selected_api"] == 0 else "[ ]"
     gb_cb  = "[x]" if state["selected_api"] == 1 else "[ ]"
@@ -310,27 +356,50 @@ def draw(stdscr, state, colors):
     write(stdscr, GELBOORU_ROW, INNER_X + CHECKBOX_W, KEY_LABEL, c_normal)
     write(stdscr, GELBOORU_ROW, INNER_X + CHECKBOX_W + len(KEY_LABEL), field_truncated(state["gb_key"], key_max_w), c_field)
 
-    # Slideshow box
+    # ── Slideshow box ─────────────────────────────────────────────────────────
     draw_box(stdscr, SS_BOX_Y, SS_BOX_H, "Slideshow", c_accent)
     write(stdscr, SS_ROW, INNER_X, SS_LABEL, c_normal)
     write(stdscr, SS_ROW, INNER_X + len(SS_LABEL), field(state["ss_interval"]), c_field)
 
-    # Size box
+    # ── Size box ──────────────────────────────────────────────────────────────
     draw_box(stdscr, SIZE_BOX_Y, SIZE_BOX_H, "Size", c_accent)
     size_display = state["size"] if state["size"] else "Fill"
     write(stdscr, SIZE_ROW, INNER_X, SIZE_LABEL, c_normal)
     write(stdscr, SIZE_ROW, INNER_X + len(SIZE_LABEL), field(size_display), c_field)
 
-    # Default Tags box
-    tags = state["tags_checked"]
-    draw_box(stdscr, TAGS_BOX_Y, tags_box_h(tags), "Default Tags", c_accent)
-    for i, (checked, value) in enumerate(zip(tags, state["tag_values"])):
-        cb = "[x]" if checked else "[ ]"
-        write(stdscr, tag_row(i), INNER_X, cb, c_check if checked else c_uncheck)
-        write(stdscr, tag_row(i), INNER_X + len(cb) + 1, field(value), c_field)
-    write(stdscr, btn_row(tags), INNER_X, "[ + Add Tag ]", c_btn)
+    # ── Tags box (scrollable) ─────────────────────────────────────────────────
+    tags      = state["tags_checked"]
+    tag_vals  = state["tag_values"]
+    t_scroll  = state["tag_scroll"]
+    n_vis     = tags_visible(stdscr)
+    box_h     = tags_box_h(n_vis)
+    total     = len(tags)
 
-    hint = " Click checkbox to select   Click field to edit   q Quit "
+    draw_box(stdscr, TAGS_BOX_Y, box_h, "Default Tags", c_accent)
+
+    # Scroll indicators on box borders
+    if t_scroll > 0:
+        write(stdscr, TAGS_BOX_Y, BOX_X + (w - 6) // 2, " ▲ ", c_accent)
+    if t_scroll + n_vis < total:
+        write(stdscr, TAGS_BOX_Y + box_h - 1, BOX_X + (w - 6) // 2, " ▼ ", c_accent)
+
+    # Visible tag rows
+    for screen_i in range(n_vis):
+        data_i = screen_i + t_scroll
+        if data_i >= total:
+            break
+        checked = tags[data_i]
+        value   = tag_vals[data_i]
+        cb      = "[x]" if checked else "[ ]"
+        row     = tag_row(screen_i)
+        write(stdscr, row, INNER_X,                cb,          c_check if checked else c_uncheck)
+        write(stdscr, row, INNER_X + TAG_CB_W + 1, field(value), c_field)
+
+    # Add button always sits at bottom of box
+    write(stdscr, btn_row(n_vis), INNER_X, "[ + Add Tag ]", c_btn)
+
+    # ── Hint bar ──────────────────────────────────────────────────────────────
+    hint = " Click checkbox to select   Click field to edit   ↑↓ Scroll tags   q Quit "
     write(stdscr, h - 1, max(0, (w - len(hint)) // 2), hint[:w - 1], c_accent)
 
     stdscr.refresh()
@@ -340,9 +409,12 @@ def draw(stdscr, state, colors):
 
 def on_click(stdscr, mx, my, state, colors):
     c_accent, c_normal, c_sel, _, c_check, c_field, c_uncheck = colors
-    c_hint = c_accent  # reuse accent color for hints
-    tags   = state["tags_checked"]
+    c_hint   = c_accent
+    n_vis    = tags_visible(stdscr)
+    t_scroll = state["tag_scroll"]
+    tags     = state["tags_checked"]
 
+    # API box
     if my == RULE34_ROW:
         if mx < INNER_X + CHECKBOX_W:
             state["selected_api"] = 0
@@ -355,22 +427,44 @@ def on_click(stdscr, mx, my, state, colors):
         else:
             state["gb_key"] = inline_edit(stdscr, my, INNER_X + CHECKBOX_W + len(KEY_LABEL), state["gb_key"], c_sel, c_hint)
 
+    # Slideshow box
     elif my == SS_ROW and mx >= INNER_X + len(SS_LABEL):
         state["ss_interval"] = inline_edit(stdscr, my, INNER_X + len(SS_LABEL), state["ss_interval"], c_sel, c_hint)
 
+    # Size box
     elif my == SIZE_ROW and mx >= INNER_X + len(SIZE_LABEL):
         state["size"] = inline_edit_size(stdscr, my, INNER_X + len(SIZE_LABEL), state["size"], c_sel, c_hint)
 
-    elif tag_row(0) <= my < tag_row(len(tags)):
-        i = my - tag_row(0)
+    # Tags: individual rows
+    elif tag_row(0) <= my < tag_row(n_vis):
+        screen_i = my - tag_row(0)
+        data_i   = screen_i + t_scroll
+        if data_i >= len(tags):
+            return
         if mx < INNER_X + TAG_CB_W:
-            tags[i] = not tags[i]
+            tags[data_i] = not tags[data_i]
         elif mx >= INNER_X + TAG_CB_W + 1:
-            state["tag_values"][i] = inline_edit(stdscr, my, INNER_X + TAG_CB_W + 1, state["tag_values"][i], c_sel, c_hint)
+            state["tag_values"][data_i] = inline_edit(
+                stdscr, my, INNER_X + TAG_CB_W + 1,
+                state["tag_values"][data_i], c_sel, c_hint
+            )
 
-    elif my == btn_row(tags) and INNER_X <= mx < INNER_X + len("[ + Add Tag ]"):
+    # Add tag button
+    elif my == btn_row(n_vis) and INNER_X <= mx < INNER_X + len("[ + Add Tag ]"):
         state["tags_checked"].append(False)
         state["tag_values"].append("")
+        # Auto-scroll to show the new tag
+        total = len(state["tags_checked"])
+        if total > n_vis:
+            state["tag_scroll"] = total - n_vis
+
+
+def scroll_tags(state, stdscr, direction):
+    """Scroll tags up (-1) or down (+1), clamped to valid range."""
+    n_vis = tags_visible(stdscr)
+    total = len(state["tags_checked"])
+    max_scroll = max(0, total - n_vis)
+    state["tag_scroll"] = max(0, min(state["tag_scroll"] + direction, max_scroll))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -385,18 +479,18 @@ def open_settings(stdscr):
     curses.init_pair(2, curses.COLOR_WHITE,  -1)
     curses.init_pair(3, curses.COLOR_BLACK,  curses.COLOR_CYAN)
     curses.init_pair(4, curses.COLOR_BLUE,   -1)
-    curses.init_pair(5, curses.COLOR_YELLOW, -1)  # checkbox checked
-    curses.init_pair(6, curses.COLOR_GREEN,  -1)  # input fields
-    curses.init_pair(7, curses.COLOR_YELLOW, -1)  # checkbox unchecked (dim = orange)
+    curses.init_pair(5, curses.COLOR_YELLOW, -1)
+    curses.init_pair(6, curses.COLOR_GREEN,  -1)
+    curses.init_pair(7, curses.COLOR_YELLOW, -1)
 
     colors = (
-        curses.color_pair(1) | curses.A_BOLD,  # c_accent  — cyan bold
-        curses.color_pair(2),                  # c_normal  — white
-        curses.color_pair(3),                  # c_sel     — black on cyan
-        curses.color_pair(4) | curses.A_BOLD,  # c_btn     — blue bold
-        curses.color_pair(5) | curses.A_BOLD,  # c_check   — yellow bold (checked)
-        curses.color_pair(6),                  # c_field   — green
-        curses.color_pair(7),                  # c_uncheck — yellow dim = orange (unchecked)
+        curses.color_pair(1) | curses.A_BOLD,
+        curses.color_pair(2),
+        curses.color_pair(3),
+        curses.color_pair(4) | curses.A_BOLD,
+        curses.color_pair(5) | curses.A_BOLD,
+        curses.color_pair(6),
+        curses.color_pair(7),
     )
 
     state = load_state()
@@ -405,6 +499,17 @@ def open_settings(stdscr):
     sys.stdout.flush()
 
     while True:
+        h, w = stdscr.getmaxyx()
+
+        if w < MIN_W or h < MIN_H:
+            draw_too_small(stdscr)
+            key = stdscr.getch()
+            if key == ord('q'):
+                sys.stdout.write("\033[?2004l")
+                sys.stdout.flush()
+                break
+            continue
+
         draw(stdscr, state, colors)
         key = stdscr.getch()
 
@@ -414,10 +519,27 @@ def open_settings(stdscr):
             sys.stdout.flush()
             break
 
+        elif key == curses.KEY_RESIZE:
+            # Clamp scroll in case terminal got smaller
+            n_vis  = tags_visible(stdscr)
+            total  = len(state["tags_checked"])
+            state["tag_scroll"] = max(0, min(state["tag_scroll"], total - n_vis))
+
+        elif key == curses.KEY_UP:
+            scroll_tags(state, stdscr, -1)
+
+        elif key == curses.KEY_DOWN:
+            scroll_tags(state, stdscr, 1)
+
         elif key == curses.KEY_MOUSE:
             try:
                 _, mx, my, _, bstate = curses.getmouse()
-                if bstate & (curses.BUTTON1_CLICKED | curses.BUTTON1_PRESSED | curses.BUTTON1_RELEASED):
+                # Mouse wheel scroll (button 4 = up, button 5 = down)
+                if bstate & curses.BUTTON4_PRESSED:
+                    scroll_tags(state, stdscr, -1)
+                elif bstate & curses.BUTTON5_PRESSED:
+                    scroll_tags(state, stdscr, 1)
+                elif bstate & (curses.BUTTON1_CLICKED | curses.BUTTON1_PRESSED | curses.BUTTON1_RELEASED):
                     on_click(stdscr, mx, my, state, colors)
             except curses.error:
                 pass
