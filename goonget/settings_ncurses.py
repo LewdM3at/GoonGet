@@ -34,14 +34,15 @@ def load_state():
         tags_checked = [False]
 
     return {
-        "selected_api": 0 if source == "rule34.xxx" else 1,
-        "r34_key":      cfg.get("rule34_api_key", ""),
-        "gb_key":       cfg.get("gelbooru_api_key", ""),
-        "ss_interval":  str(cfg.get("slideshow_timer", "")),
-        "size":         cfg.get("size", ""),
-        "tags_checked": tags_checked,
-        "tag_values":   tag_values,
-        "tag_scroll":   0,
+        "selected_api":    0 if source == "rule34.xxx" else 1,
+        "r34_key":         cfg.get("rule34_api_key", ""),
+        "gb_key":          cfg.get("gelbooru_api_key", ""),
+        "ss_interval":     str(cfg.get("slideshow_timer", "")),
+        "size":            cfg.get("size", ""),
+        "show_src_links":  cfg.get("show_source_links", False),
+        "tags_checked":    tags_checked,
+        "tag_values":      tag_values,
+        "tag_scroll":      0,
     }
 
 
@@ -54,9 +55,10 @@ def save_state(state):
     else:
         cfg = {}
 
-    cfg["source"]           = "rule34.xxx" if state["selected_api"] == 0 else "gelbooru.com"
-    cfg["rule34_api_key"]   = state["r34_key"]
-    cfg["gelbooru_api_key"] = state["gb_key"]
+    cfg["source"]             = "rule34.xxx" if state["selected_api"] == 0 else "gelbooru.com"
+    cfg["rule34_api_key"]     = state["r34_key"]
+    cfg["gelbooru_api_key"]   = state["gb_key"]
+    cfg["show_source_links"]  = state["show_src_links"]
 
     if state["ss_interval"].strip().isdigit():
         cfg["slideshow_timer"] = int(state["ss_interval"].strip())
@@ -96,7 +98,12 @@ SIZE_BOX_H = 5
 SIZE_ROW   = SIZE_BOX_Y + 2
 SIZE_LABEL = "Size (WxH): "
 
-TAGS_BOX_Y       = SIZE_BOX_Y + SIZE_BOX_H + 1
+INFO_BOX_Y   = SIZE_BOX_Y + SIZE_BOX_H + 1
+INFO_BOX_H   = 5
+INFO_ROW     = INFO_BOX_Y + 2
+SRC_LINK_CB  = "[ ] Show source links"
+
+TAGS_BOX_Y       = INFO_BOX_Y + INFO_BOX_H + 1
 TAG_CB_W         = len("[x] ")
 TAGS_VISIBLE_MAX = 15
 
@@ -109,8 +116,6 @@ MIN_H     = TAGS_BOX_Y + 7  # enough to show box + at least 1 tag + blank row + 
 def tags_visible(stdscr):
     """How many tag rows fit in the terminal, capped at TAGS_VISIBLE_MAX."""
     h, _ = stdscr.getmaxyx()
-    # Available rows: terminal height minus fixed content above, minus
-    # box top border + bottom border + add-button row + hint row + 1 padding
     available = h - TAGS_BOX_Y - 5
     return max(1, min(TAGS_VISIBLE_MAX, available))
 
@@ -367,6 +372,12 @@ def draw(stdscr, state, colors):
     write(stdscr, SIZE_ROW, INNER_X, SIZE_LABEL, c_normal)
     write(stdscr, SIZE_ROW, INNER_X + len(SIZE_LABEL), field(size_display), c_field)
 
+    # ── Additional Information box ────────────────────────────────────────────
+    draw_box(stdscr, INFO_BOX_Y, INFO_BOX_H, "Additional Information", c_accent)
+    src_cb = "[x]" if state["show_src_links"] else "[ ]"
+    write(stdscr, INFO_ROW, INNER_X, src_cb, c_check if state["show_src_links"] else c_uncheck)
+    write(stdscr, INFO_ROW, INNER_X + len(src_cb) + 1, "Show source links", c_normal)
+
     # ── Tags box (scrollable) ─────────────────────────────────────────────────
     tags      = state["tags_checked"]
     tag_vals  = state["tag_values"]
@@ -434,6 +445,10 @@ def on_click(stdscr, mx, my, state, colors):
     # Size box
     elif my == SIZE_ROW and mx >= INNER_X + len(SIZE_LABEL):
         state["size"] = inline_edit_size(stdscr, my, INNER_X + len(SIZE_LABEL), state["size"], c_sel, c_hint)
+
+    # Additional Information box
+    elif my == INFO_ROW and mx < INNER_X + len(SRC_LINK_CB):
+        state["show_src_links"] = not state["show_src_links"]
 
     # Tags: individual rows
     elif tag_row(0) <= my < tag_row(n_vis):
