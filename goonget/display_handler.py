@@ -11,19 +11,21 @@ SUPPORTED_IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp"}
 SUPPORTED_GIF_FORMATS = {"gif"}
 SUPPORTED_VIDEO_FORMATS = {"mp4", "webm", "mkv"}  
 
-def display_result(url: str):
-    if not url:
-        print("No URL provided.")
+def display_result(urls):
+    if not urls:
+        print("No URLs provided.")
         return
 
-    ext = _get_extension(url)
+    file_url = urls["file_url"]
+    source_url = urls["source_url"]
+    ext = _get_extension(file_url)
 
     if ext in SUPPORTED_IMAGE_FORMATS:
-        _handle_image(url, ext)
+        _handle_image(file_url, source_url, ext)
     elif ext in SUPPORTED_GIF_FORMATS:
-        _handle_gif(url, ext)
+        _handle_gif(file_url, source_url, ext)
     elif ext in SUPPORTED_VIDEO_FORMATS:
-        _handle_video(url, ext)
+        _handle_video(file_url, source_url, ext)
     else:
         print(f"Unsupported file type: .{ext}")
 
@@ -75,8 +77,8 @@ def _download_to_temp(url: str, ext: str) -> str | None:
 
     return tmp.name
 
-def _handle_image(url: str, ext: str):
-    path = _download_to_temp(url, ext)
+def _handle_image(file_url: str, source_url, ext: str):
+    path = _download_to_temp(file_url, ext)
     if not path:
         return
 
@@ -85,14 +87,16 @@ def _handle_image(url: str, ext: str):
     if not size or size.lower() == "fill":
         # No size → use chafa defaults
         os.system(f"chafa {path}")
+        print("Source:", clickable(source_url))
     else:
         # Size provided → pass it to chafa
         os.system(f"chafa --size={size} {path}")
+        print("Source: " + clickable(source_url))
 
     _cleanup(path)
 
-def _handle_gif(url: str, ext: str):
-    path = _download_to_temp(url, ext)
+def _handle_gif(file_url: str, source_url: str, ext: str):
+    path = _download_to_temp(file_url, ext)
     if not path:
         return
 
@@ -101,13 +105,15 @@ def _handle_gif(url: str, ext: str):
     if not size or size.lower() == "fill":
         # No size → use chafa defaults
         os.system(f"chafa {path}")
+        print("Source: " + source_url)
     else:
         # Size provided → pass it to chafa
         os.system(f"chafa --size={size} {path}")
+        print("Source: " + source_url)
 
     _cleanup(path)
 
-def _handle_video(url: str, ext: str):
+def _handle_video(file_url: str, source_url: str, ext: str):
     print("Video support not implemented yet.")
     # Later: use mpv + chafa pipe
     # os.system(f"mpv --vo=tct {path}")
@@ -127,5 +133,10 @@ def _wait_or_keypress(seconds: float) -> bool:
         sys.stdin.read(1)  # consume key
         return True
     return False
+
+def clickable(url, label=None):
+    label = label or url
+    return f"\033]8;;{url}\033\\{label}\033]8;;\033\\"
+
 
 
