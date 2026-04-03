@@ -52,10 +52,15 @@ def fetch_posts(api_credentials: str, tags: list[str]) -> str | None:
     for post in posts:
         if source == "rule34.xxx":
             file_url = post.get("file_url")
+            source_url = post.get("source")
         elif source == "gelbooru.com":
             file_url = post.find("file_url").text if post.find("file_url") is not None else None
+            source_url = post.find("source").text if post.find("source") is not None else None
         if not file_url: 
             continue 
-        urls.append(file_url) 
+        urls.append({
+            "file_url": file_url,
+            "source_url": source_url
+        }) 
 
     return urls
