@@ -81,6 +81,11 @@ def set_slideshow_timer(value: int):
     cfg["slideshow_timer"] = value
     _save_config(cfg)
 
+# ── Additional Information ─────────────────────────────────────────────────────────────────
+
+def get_show_source_links() -> bool:
+    return _load_config().get("show_source_links", False)
+
 
 # ── Tags ──────────────────────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ import random
 import time
 import sys
 import select
-from .settings_handler import get_current_size, get_slideshow_timer, get_source
+from .settings_handler import get_current_size, get_slideshow_timer, get_source, get_show_source_links
 
 SUPPORTED_IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp"}
 SUPPORTED_GIF_FORMATS = {"gif"}
@@ -19,13 +19,14 @@ def display_result(urls):
     file_url = urls["file_url"]
     source_url = urls["source_url"]
     ext = _get_extension(file_url)
+    show_src_links = get_show_source_links()
 
     if ext in SUPPORTED_IMAGE_FORMATS:
-        _handle_image(file_url, source_url, ext)
+        _handle_image(file_url, source_url, ext, show_src_links)
     elif ext in SUPPORTED_GIF_FORMATS:
-        _handle_gif(file_url, source_url, ext)
+        _handle_gif(file_url, source_url, ext, show_src_links)
     elif ext in SUPPORTED_VIDEO_FORMATS:
-        _handle_video(file_url, source_url, ext)
+        _handle_video(file_url, source_url, ext, show_src_links)
     else:
         print(f"Unsupported file type: .{ext}")
 
@@ -77,7 +78,7 @@ def _download_to_temp(url: str, ext: str) -> str | None:
 
     return tmp.name
 
-def _handle_image(file_url: str, source_url, ext: str):
+def _handle_image(file_url: str, source_url: str, ext: str, show_src_links: bool):
     path = _download_to_temp(file_url, ext)
     if not path:
         return
@@ -87,15 +88,17 @@ def _handle_image(file_url: str, source_url, ext: str):
     if not size or size.lower() == "fill":
         # No size → use chafa defaults
         os.system(f"chafa {path}")
-        print("Source:", clickable(source_url))
+        if show_src_links == True:
+            print("Source:", clickable(source_url))
     else:
         # Size provided → pass it to chafa
         os.system(f"chafa --size={size} {path}")
-        print("Source: " + clickable(source_url))
+        if show_src_links == True:
+            print("Source: " + clickable(source_url))
 
     _cleanup(path)
 
-def _handle_gif(file_url: str, source_url: str, ext: str):
+def _handle_gif(file_url: str, source_url: str, ext: str, show_src_links: bool):
     path = _download_to_temp(file_url, ext)
     if not path:
         return
@@ -105,15 +108,17 @@ def _handle_gif(file_url: str, source_url: str, ext: str):
     if not size or size.lower() == "fill":
         # No size → use chafa defaults
         os.system(f"chafa {path}")
-        print("Source: " + source_url)
+        if show_src_links == True:
+            print("Source: " + clickable(source_url))
     else:
         # Size provided → pass it to chafa
         os.system(f"chafa --size={size} {path}")
-        print("Source: " + source_url)
+        if show_src_links == True:
+            print("Source: " + clickable(source_url))
 
     _cleanup(path)
 
-def _handle_video(file_url: str, source_url: str, ext: str):
+def _handle_video(file_url: str, source_url: str, ext: str, show_src_links: bool):
     print("Video support not implemented yet.")
     # Later: use mpv + chafa pipe
     # os.system(f"mpv --vo=tct {path}")
