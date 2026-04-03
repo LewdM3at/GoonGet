@@ -49,7 +49,7 @@ def main():
             return
         final_tags = build_tags(args[1:])
         urls = fetch_posts(api_credentials, final_tags)
-        urls = [u for u in urls if not u.lower().endswith(".gif")]
+        urls = [u for u in urls if not u["file_url"].lower().endswith(".gif")]
         display_slideshow(urls)
         return
 
