@@ -5,6 +5,8 @@ import random
 import time
 import sys
 import select
+import shutil
+import subprocess
 from .settings_handler import get_current_size, get_slideshow_timer, get_source, get_show_source_links
 
 SUPPORTED_IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp"}
@@ -119,9 +121,21 @@ def _handle_gif(file_url: str, source_url: str, ext: str, show_src_links: bool):
     _cleanup(path)
 
 def _handle_video(file_url: str, source_url: str, ext: str, show_src_links: bool):
-    print("Video support not implemented yet.")
-    # Later: use mpv + chafa pipe
-    # os.system(f"mpv --vo=tct {path}")
+    path = _download_to_temp(file_url, ext)
+    if not path:
+        return
+
+    try:
+        if shutil.which("mpv"):
+            subprocess.run(["mpv", "--profile=sw-fast", "--vo=kitty", "--really-quiet", path], stderr=subprocess.DEVNULL)
+        else:
+            if shutil.which("xdg-open"):
+                subprocess.run(["xdg-open", path], stderr=subprocess.DEVNULL)
+            else:
+                print("No suitable video player found. Install mpv or set a default via xdg-mime.")
+    finally:
+        _cleanup(path)
+
 
 def _cleanup(path: str):
     try:
