@@ -89,12 +89,14 @@ def _handle_image(file_url: str, source_url: str, ext: str, show_src_links: bool
 
     if not size or size.lower() == "fill":
         # No size → use chafa defaults
-        os.system(f"chafa {path}")
+        #os.system(f"chafa {path}")
+        subprocess.run(["chafa", path], stderr=subprocess.DEVNULL)
         if show_src_links == True:
             print("Source:", clickable(source_url))
     else:
         # Size provided → pass it to chafa
-        os.system(f"chafa --size={size} {path}")
+        #os.system(f"chafa --size={size} {path}")
+        subprocess.run(["chafa", "--size=" + size, path], stderr=subprocess.DEVNULL)
         if show_src_links == True:
             print("Source: " + clickable(source_url))
 
@@ -109,12 +111,14 @@ def _handle_gif(file_url: str, source_url: str, ext: str, show_src_links: bool):
 
     if not size or size.lower() == "fill":
         # No size → use chafa defaults
-        os.system(f"chafa {path}")
+        #os.system(f"chafa {path}")
+        subprocess.run(["chafa", path], stderr=subprocess.DEVNULL)
         if show_src_links == True:
             print("Source: " + clickable(source_url))
     else:
         # Size provided → pass it to chafa
-        os.system(f"chafa --size={size} {path}")
+        #os.system(f"chafa --size={size} {path}")
+        subprocess.run(["chafa", "--size=" + size, path], stderr=subprocess.DEVNULL)
         if show_src_links == True:
             print("Source: " + clickable(source_url))
 
