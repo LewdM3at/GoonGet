@@ -3,7 +3,7 @@ import sys
 import random
 import curses
 from .api_calls import fetch_posts
-from .display_handler import display_result, display_slideshow
+from .display_handler import display_result, display_slideshow, _reset_terminal
 from .help import print_help
 from .settings_ncurses import open_settings
 from .settings_handler import (
@@ -14,6 +14,16 @@ from .settings_handler import (
 
 
 def main():
+    try:
+        _run()
+    except KeyboardInterrupt:
+        # mpv's finally already restores the terminal; reset again in case the
+        # interrupt landed elsewhere, and exit quietly instead of dumping a traceback.
+        _reset_terminal()
+        print()
+
+
+def _run():
     args = sys.argv[1:]
 
     # open settings page
